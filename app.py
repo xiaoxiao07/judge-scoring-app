@@ -165,11 +165,16 @@ def render_scoring_page(judge: dict):
     st.markdown(f"### 📝 {group}评分")
     st.caption("请为参赛选手的每个评分项打分")
 
+    # 提交计数器：每次提交后 +1，使滑块重新从 0 开始
+    if "submit_round" not in st.session_state:
+        st.session_state.submit_round = 0
+    submit_round = st.session_state.submit_round
+
     # 选手编号输入
     contestant_id = st.text_input(
         "🎯 被评分选手编号/姓名",
         placeholder="请输入选手编号或姓名",
-        key="contestant_id",
+        key=f"contestant_id_{submit_round}",
     )
 
     # 评分项 — 使用滑动条
@@ -187,14 +192,14 @@ def render_scoring_page(judge: dict):
             unsafe_allow_html=True,
         )
 
-        # 用 slider 实现评分（默认显示为整数）
+        # 用 slider 实现评分，key 加上 submit_round 确保提交后重置
         scores[criterion_name] = st.slider(
             label=criterion_name,
             min_value=0,
             max_value=max_score,
             value=0,
             step=1,
-            key=f"score_{criterion_name}",
+            key=f"score_{criterion_name}_{submit_round}",
             label_visibility="collapsed",
             help=desc,
         )
@@ -229,10 +234,8 @@ def render_scoring_page(judge: dict):
                 f"✅ {judge['name']} 裁判 → 选手 {record['contestant_id']} "
                 f"得分 {record['total_score']}/{record['total_max']}，已记录！"
             )
-            # 重置评分
-            for criterion_name in criteria:
-                st.session_state[f"score_{criterion_name}"] = 0
-            st.session_state.contestant_id = ""
+            # 递增计数器，使滑块和输入框在 rerun 后以新 key 创建（初始值 0）
+            st.session_state.submit_round += 1
             st.rerun()
 
 
