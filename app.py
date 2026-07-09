@@ -137,6 +137,15 @@ def main():
         if st.button("🔄 切换", help="切换裁判账号"):
             logout()
 
+    # --- 手动登录后显示书签提示 ---
+    if st.session_state.pop("_manual_login", False):
+        st.info(
+            "🔖 **登录成功！**\n\n"
+            "请在手机浏览器中**将此页面添加到书签**，下次直接打开书签即可进入评分页，无需再次输入信息。\n\n"
+            "👉 在 Safari/Chrome 中点击分享按钮 → **添加到主屏幕** 使用更方便",
+            icon="📌",
+        )
+
     st.markdown("---")
 
     # --- 页面 Tab ---

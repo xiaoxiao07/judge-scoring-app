@@ -54,6 +54,9 @@ def login(name: str, judge_id: str, group: str) -> dict:
     st.query_params["judge_id"] = judge_info["judge_id"]
     st.query_params["judge_group"] = judge_info["group"]
 
+    # 标记为手动登录（用于显示书签提示）
+    st.session_state._manual_login = True
+
     return judge_info
 
 
