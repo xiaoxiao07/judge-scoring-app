@@ -22,7 +22,8 @@ def login(name: str, judge_id: str, group: str) -> dict:
     裁判登录
     1. 注册/更新裁判信息
     2. 写入 session_state
-    3. 返回裁判信息
+    3. 将裁判信息写入 URL 参数（用于下次自动登录）
+    4. 返回裁判信息
     """
     if not name or not name.strip():
         st.error("请输入裁判姓名")
@@ -37,7 +38,7 @@ def login(name: str, judge_id: str, group: str) -> dict:
     name = name.strip()
     judge_id = judge_id.strip()
 
-    # 注册裁判信息
+    # 注册裁判信息（用作管理后台查看，不影响登录）
     judge_info = register_judge(name, judge_id, group)
 
     # 写入 session_state
@@ -47,8 +48,11 @@ def login(name: str, judge_id: str, group: str) -> dict:
     st.session_state.judge_group = judge_info["group"]
     st.session_state.judge_token = judge_info["token"]
 
-    # 写入 URL query params
+    # 将裁判信息写入 URL 参数（不依赖文件存储，冷启动后依然可用）
     st.query_params["token"] = judge_info["token"]
+    st.query_params["judge_name"] = judge_info["name"]
+    st.query_params["judge_id"] = judge_info["judge_id"]
+    st.query_params["judge_group"] = judge_info["group"]
 
     return judge_info
 
@@ -64,17 +68,17 @@ def logout():
             del st.session_state[k]
 
     # 清除 URL 参数
-    if "token" in st.query_params:
-        del st.query_params["token"]
+    for key in ["token", "judge_name", "judge_id", "judge_group"]:
+        if key in st.query_params:
+            del st.query_params[key]
 
     st.rerun()
 
 
 def auto_login_from_token() -> bool:
     """
-    从 URL 参数中自动登录
-    如果 URL 中有 token 且有效，自动填充 session_state
-    返回是否成功
+    从 URL 参数中通过 token 查询文件登录
+    优先尝试此方式，但文件可能在冷启动后丢失
     """
     token = st.query_params.get("token")
     if not token:
@@ -89,6 +93,29 @@ def auto_login_from_token() -> bool:
     st.session_state.judge_id = judge["judge_id"]
     st.session_state.judge_group = judge["group"]
     st.session_state.judge_token = judge["token"]
+    return True
+
+
+def auto_login_from_params() -> bool:
+    """
+    从 URL 参数中直接恢复登录（不依赖文件查询）
+    作为 token 查询失败后的兜底方案
+    """
+    name = st.query_params.get("judge_name")
+    judge_id = st.query_params.get("judge_id")
+    group = st.query_params.get("judge_group")
+    token = st.query_params.get("token", "")
+
+    if not all([name, judge_id, group]):
+        return False
+    if group not in get_groups():
+        return False
+
+    st.session_state.logged_in = True
+    st.session_state.judge_name = name
+    st.session_state.judge_id = judge_id
+    st.session_state.judge_group = group
+    st.session_state.judge_token = token
     return True
 
 

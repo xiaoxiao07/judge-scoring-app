@@ -12,6 +12,7 @@ import streamlit as st
 
 from utils.auth import (
     auto_login_from_token,
+    auto_login_from_params,
     is_logged_in,
     get_current_judge,
     render_login_page,
@@ -106,9 +107,10 @@ st.markdown(
 
 
 def main():
-    # 尝试从 URL token 自动登录
+    # 尝试从 URL 自动登录（优先用 token 查询文件，失败则从参数直接恢复）
     if not is_logged_in():
-        auto_login_from_token()
+        if not auto_login_from_token():
+            auto_login_from_params()
 
     # ===== 未登录 → 显示登录页 =====
     if not is_logged_in():
