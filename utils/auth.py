@@ -8,7 +8,7 @@ from typing import Optional
 
 import streamlit as st
 
-from .data_manager import register_judge, find_judge_by_token, find_judge_by_id, get_all_judges
+from .data_manager import register_judge, find_judge_by_token
 from .scoring import get_groups
 
 
@@ -112,7 +112,7 @@ def get_current_judge() -> Optional[dict]:
 def render_login_page():
     """
     渲染登录页面
-    包括：输入框、已注册裁判一键登录
+    裁判手动输入信息登录，不支持切换他人账号
     """
     st.title("🏅 裁判评分系统")
     st.markdown("---")
@@ -137,31 +137,5 @@ def render_login_page():
                 st.success(f"欢迎，{result['name']} 裁判！")
                 st.rerun()
 
-    # 显示已注册裁判列表（方便再次登录）
     st.markdown("---")
-    st.markdown("### 📋 已注册裁判")
-    st.caption("点击您的名字可直接登录（无需重复输入信息）")
-
-    judges = get_all_judges()
-    if not judges:
-        st.info("暂无已注册裁判，请填写上方信息进行首次登录。")
-    else:
-        # 按组分类显示
-        for group in get_groups():
-            group_judges = [j for j in judges if j.get("group") == group]
-            if not group_judges:
-                continue
-
-            st.markdown(f"**{group}**")
-            cols = st.columns(min(len(group_judges), 4))
-            for idx, j in enumerate(group_judges):
-                col_idx = idx % 4
-                with cols[col_idx]:
-                    if st.button(
-                        f"{j['name']} ({j['judge_id']})",
-                        key=f"quick_login_{j['judge_id']}",
-                        use_container_width=True,
-                    ):
-                        # 一键登录
-                        login(j["name"], j["judge_id"], j["group"])
-                        st.rerun()
+    st.caption("💡 首次登录后，再次访问此链接将自动进入评分页，无需重复登录。")

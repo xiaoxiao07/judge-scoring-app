@@ -301,7 +301,7 @@ def render_admin_page():
         password = st.text_input(
             "🔐 请输入管理密码",
             type="password",
-            placeholder="默认密码: admin123",
+            placeholder="默认密码: zpds2026",
             key="admin_pwd",
         )
         if st.button("验证", use_container_width=True):
