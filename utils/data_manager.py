@@ -124,7 +124,13 @@ def get_all_judges() -> list:
 # ===================== 评分记录管理 =====================
 
 
-def save_score(judge_info: dict, contestant_id: str, scores: dict) -> dict:
+def save_score(
+    judge_info: dict,
+    contestant_id: str,
+    scores: dict,
+    deductions: Optional[dict] = None,
+    final_score: Optional[int] = None,
+) -> dict:
     """
     保存一条评分记录
     返回保存的记录字典
@@ -145,10 +151,17 @@ def save_score(judge_info: dict, contestant_id: str, scores: dict) -> dict:
         "judge_group": group,
         "contestant_id": contestant_id,
         "scores": {k: int(v) for k, v in scores.items()},
-        "total_score": score_total,
+        "total_score": final_score if final_score is not None else score_total,
+        "raw_score": score_total,
         "total_max": total_max,
         "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
     }
+    if deductions:
+        record["deductions"] = deductions
+        record["deduction_total"] = sum(
+            v for v in deductions.values() if isinstance(v, (int, float))
+        )
+
     records.append(record)
     _write_json(file_path, records)
     return record
@@ -195,13 +208,15 @@ def export_to_excel(group: str) -> Optional[Path]:
         return None
 
     criteria = get_criteria(group)
+    has_deductions = any("deductions" in r for r in records)
+
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = f"{group}评分记录"
 
     # 构建表头
     score_headers = [f"{k}({v['max']})" for k, v in criteria.items()]
-    headers = ["裁判姓名", "裁判编号", "裁判组", "选手编号/姓名"] + score_headers + ["总分", "评分时间"]
+    headers = ["裁判姓名", "裁判编号", "裁判组", "选手编号/姓名"] + score_headers + ["原始总分", "扣分", "最终总分", "评分时间"]
 
     _style_header(ws, headers)
 
@@ -225,7 +240,11 @@ def export_to_excel(group: str) -> Optional[Path]:
         # 各评分项得分
         for criterion_key in criteria:
             row_data.append(record["scores"].get(criterion_key, 0))
-        # 总分和评分时间
+        # 原始总分、扣分、最终总分、评分时间
+        raw_score = record.get("raw_score", record["total_score"])
+        deduction_total = record.get("deduction_total", 0)
+        row_data.append(raw_score)
+        row_data.append(deduction_total if deduction_total else "")
         row_data.append(record["total_score"])
         row_data.append(record["timestamp"])
 

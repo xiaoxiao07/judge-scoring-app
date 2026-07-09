@@ -18,15 +18,7 @@ from utils.auth import (
     render_login_page,
     logout,
 )
-from utils.scoring import get_criteria, get_total_score
-from utils.data_manager import (
-    init_data_files,
-    save_score,
-    get_all_scores,
-    export_to_excel,
-    export_all_to_excel,
-)
-from utils.scoring import get_groups
+from utils.scoring import get_criteria, get_total_score, get_groups, get_deductions, get_veto
 
 # ===================== 页面配置 =====================
 
@@ -172,11 +164,13 @@ def render_scoring_page(judge: dict):
     group = judge["group"]
     criteria = get_criteria(group)
     total_max = get_total_score(group)
+    deductions_def = get_deductions(group)
+    veto_def = get_veto(group)
 
     st.markdown(f"### 📝 {group}评分")
     st.caption("请为参赛选手的每个评分项打分")
 
-    # 提交计数器：每次提交后 +1，使滑块重新从 0 开始
+    # 提交计数器：每次提交后 +1，使输入框重新从 0 开始
     if "submit_round" not in st.session_state:
         st.session_state.submit_round = 0
     submit_round = st.session_state.submit_round
@@ -192,39 +186,133 @@ def render_scoring_page(judge: dict):
     scores = {}
     st.markdown("#### 评分项")
 
-    for criterion_name, criterion_info in criteria.items():
-        max_score = criterion_info["max"]
-        desc = criterion_info["description"]
+    if group == "线上赛":
+        # 线上赛按考核模块分组显示
+        modules = {}
+        for name, info in criteria.items():
+            module = info.get("module", "其他")
+            modules.setdefault(module, []).append((name, info))
+        for module_name, items in modules.items():
+            st.markdown(f"**{module_name}**")
+            for criterion_name, criterion_info in items:
+                max_score = criterion_info["max"]
+                desc = criterion_info["description"]
+                st.markdown(
+                    f"<div class='score-card'>"
+                    f"<div class='criterion-name'>{criterion_name}</div>"
+                    f"<div class='criterion-desc'>{desc}</div>",
+                    unsafe_allow_html=True,
+                )
+                scores[criterion_name] = st.number_input(
+                    label=criterion_name,
+                    min_value=0,
+                    max_value=max_score,
+                    value=0,
+                    step=1,
+                    key=f"score_{criterion_name}_{submit_round}",
+                    label_visibility="collapsed",
+                )
+                st.markdown("</div>", unsafe_allow_html=True)
+    else:
+        # 其他组直接显示
+        for criterion_name, criterion_info in criteria.items():
+            max_score = criterion_info["max"]
+            desc = criterion_info["description"]
+            st.markdown(
+                f"<div class='score-card'>"
+                f"<div class='criterion-name'>{criterion_name}</div>"
+                f"<div class='criterion-desc'>{desc}（满分 {max_score} 分）</div>",
+                unsafe_allow_html=True,
+            )
+            scores[criterion_name] = st.number_input(
+                label=criterion_name,
+                min_value=0,
+                max_value=max_score,
+                value=0,
+                step=1,
+                key=f"score_{criterion_name}_{submit_round}",
+                label_visibility="collapsed",
+            )
+            st.markdown("</div>", unsafe_allow_html=True)
 
-        st.markdown(
-            f"<div class='score-card'>"
-            f"<div class='criterion-name'>{criterion_name}</div>"
-            f"<div class='criterion-desc'>{desc}（满分 {max_score} 分）</div>",
-            unsafe_allow_html=True,
-        )
+    # === 线上赛：扣分项 ===
+    deduction_total = 0
+    deductions_applied = {}
+    if deductions_def:
+        st.markdown("---")
+        st.markdown("#### ⚠️ 扣分项")
+        st.caption("如存在以下情况，勾选对应扣分项")
+        for ded_name, ded_info in deductions_def.items():
+            deduct_val = ded_info["deduct"]
+            desc = ded_info["description"]
+            if deduct_val == "half":
+                col1, col2 = st.columns([3, 1])
+                with col1:
+                    st.markdown(f"**{ded_name}**")
+                    st.caption(desc)
+                with col2:
+                    bad_steps = st.number_input(
+                        label=f"问题步数-{ded_name}",
+                        min_value=0,
+                        max_value=6,
+                        value=0,
+                        step=1,
+                        key=f"ded_steps_{ded_name}_{submit_round}",
+                        label_visibility="collapsed",
+                    )
+                    if bad_steps > 0:
+                        step_deduct = bad_steps * 1
+                        deductions_applied[ded_name] = step_deduct
+                        st.caption(f"扣 {step_deduct} 分")
+            else:
+                checked = st.checkbox(
+                    f"{ded_name}（扣 {deduct_val} 分）",
+                    key=f"ded_{ded_name}_{submit_round}",
+                    help=desc,
+                )
+                if checked:
+                    deductions_applied[ded_name] = deduct_val
 
-        # 用 number_input 实现评分，限制输入范围
-        scores[criterion_name] = st.number_input(
-            label=criterion_name,
-            min_value=0,
-            max_value=max_score,
-            value=0,
-            step=1,
-            key=f"score_{criterion_name}_{submit_round}",
-            label_visibility="collapsed",
-            help=desc,
-        )
-        st.markdown("</div>", unsafe_allow_html=True)
+        deduction_total = sum(deductions_applied.values())
+        if deduction_total > 0:
+            st.warning(f"扣分合计：{deduction_total} 分")
+
+    # === 线上赛：否决项警告 ===
+    if veto_def:
+        st.markdown("---")
+        st.markdown("#### 🚫 否决项")
+        for veto_name, veto_info in veto_def.items():
+            st.error(f"**{veto_name}**：{veto_info['description']}")
+        st.caption("如触发以上任何否决项，演示环节计 0 分")
 
     # 实时总分
-    current_total = sum(scores.values())
-    st.markdown(
-        f"<div class='total-score-box'>"
-        f"<div class='score-label'>当前总分</div>"
-        f"<div class='score-value'>{current_total} / {total_max}</div>"
-        f"</div>",
-        unsafe_allow_html=True,
-    )
+    raw_total = sum(scores.values())
+    final_total = max(0, raw_total - deduction_total)
+
+    if deductions_def:
+        st.markdown(
+            f"<div class='total-score-box'>"
+            f"<div class='score-label'>原始总分</div>"
+            f"<div class='score-value'>{raw_total} / {total_max}</div>"
+            f"</div>",
+            unsafe_allow_html=True,
+        )
+        if deduction_total > 0:
+            st.markdown(
+                f"<div style='background:#fff3cd;border-radius:10px;padding:10px;text-align:center;margin:10px 0;'>"
+                f"<div style='font-size:14px;'>扣分：{deduction_total} 分</div>"
+                f"<div style='font-size:24px;font-weight:bold;color:#dc3545;'>最终得分：{final_total} / {total_max}</div>"
+                f"</div>",
+                unsafe_allow_html=True,
+            )
+    else:
+        st.markdown(
+            f"<div class='total-score-box'>"
+            f"<div class='score-label'>当前总分</div>"
+            f"<div class='score-value'>{raw_total} / {total_max}</div>"
+            f"</div>",
+            unsafe_allow_html=True,
+        )
 
     # 提交按钮
     col_submit, _ = st.columns([2, 1])
@@ -240,13 +328,17 @@ def render_scoring_page(judge: dict):
         if not contestant_id or not contestant_id.strip():
             st.error("请输入被评分选手的编号或姓名")
         else:
-            record = save_score(judge, contestant_id.strip(), scores)
-            record = save_score(judge, contestant_id.strip(), scores)
+            record = save_score(
+                judge,
+                contestant_id.strip(),
+                scores,
+                deductions=deductions_applied if deductions_applied else None,
+                final_score=final_total,
+            )
             st.success(
                 f"✅ {judge['name']} 裁判 → 选手 {record['contestant_id']} "
                 f"得分 {record['total_score']}/{record['total_max']}，已记录！"
             )
-            # 递增计数器，使滑块和输入框在 rerun 后以新 key 创建（初始值 0）
             st.session_state.submit_round += 1
             st.rerun()
 
@@ -277,14 +369,25 @@ def render_history_page(judge: dict):
     # 显示评分记录表格
     criteria = get_criteria(group)
     score_headers = list(criteria.keys())
-    headers = ["选手编号"] + score_headers + ["总分", "评分时间"]
+    has_deductions = any(r.get("deductions") for r in my_records)
+    if has_deductions:
+        headers = ["选手编号"] + score_headers + ["原始分", "扣分", "最终得分", "评分时间"]
+    else:
+        headers = ["选手编号"] + score_headers + ["总分", "评分时间"]
 
     table_data = []
     for r in reversed(my_records):  # 最新的在前
         row = [r["contestant_id"]]
         for c in score_headers:
             row.append(str(r["scores"].get(c, 0)))
-        row.append(f"{r['total_score']}/{r['total_max']}")
+        if has_deductions:
+            raw = r.get("raw_score", r["total_score"])
+            deduct = r.get("deduction_total", 0)
+            row.append(str(raw))
+            row.append(str(deduct) if deduct else "0")
+            row.append(f"{r['total_score']}/{r['total_max']}")
+        else:
+            row.append(f"{r['total_score']}/{r['total_max']}")
         row.append(r["timestamp"])
         table_data.append(row)
 
