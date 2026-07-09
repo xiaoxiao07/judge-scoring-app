@@ -188,7 +188,7 @@ def render_scoring_page(judge: dict):
         key=f"contestant_id_{submit_round}",
     )
 
-    # 评分项 — 使用滑动条
+    # 评分项 — 使用数字输入
     scores = {}
     st.markdown("#### 评分项")
 
@@ -203,8 +203,8 @@ def render_scoring_page(judge: dict):
             unsafe_allow_html=True,
         )
 
-        # 用 slider 实现评分，key 加上 submit_round 确保提交后重置
-        scores[criterion_name] = st.slider(
+        # 用 number_input 实现评分，限制输入范围
+        scores[criterion_name] = st.number_input(
             label=criterion_name,
             min_value=0,
             max_value=max_score,
@@ -240,6 +240,7 @@ def render_scoring_page(judge: dict):
         if not contestant_id or not contestant_id.strip():
             st.error("请输入被评分选手的编号或姓名")
         else:
+            record = save_score(judge, contestant_id.strip(), scores)
             record = save_score(judge, contestant_id.strip(), scores)
             st.success(
                 f"✅ {judge['name']} 裁判 → 选手 {record['contestant_id']} "
