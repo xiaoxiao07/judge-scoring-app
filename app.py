@@ -19,6 +19,13 @@ from utils.auth import (
     logout,
 )
 from utils.scoring import get_criteria, get_total_score, get_groups, get_deductions, get_veto
+from utils.data_manager import (
+    init_data_files,
+    save_score,
+    get_all_scores,
+    export_to_excel,
+    export_all_to_excel,
+)
 
 # ===================== 页面配置 =====================
 

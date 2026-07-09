@@ -24,6 +24,7 @@ JUDGES_FILE = DATA_DIR / "judges.json"
 SCORE_FILES = {
     "答辩组": DATA_DIR / "scores_答辩组.json",
     "实操组": DATA_DIR / "scores_实操组.json",
+    "线上赛": DATA_DIR / "scores_线上赛.json",
 }
 
 
