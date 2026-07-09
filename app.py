@@ -305,7 +305,7 @@ def render_admin_page():
             key="admin_pwd",
         )
         if st.button("验证", use_container_width=True):
-            if password == "admin123":
+            if password == "zpds2026":
                 st.session_state.admin_verified = True
                 st.rerun()
             else:
