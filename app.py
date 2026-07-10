@@ -204,10 +204,12 @@ def render_scoring_page(judge: dict):
             for criterion_name, criterion_info in items:
                 max_score = criterion_info["max"]
                 desc = criterion_info["description"]
+                score_range = criterion_info.get("score_range", f"0~{max_score}分")
                 st.markdown(
                     f"<div class='score-card'>"
                     f"<div class='criterion-name'>{criterion_name}</div>"
-                    f"<div class='criterion-desc'>{desc}</div>",
+                    f"<div class='criterion-desc'>{desc}</div>"
+                    f"<div style='font-size:12px;color:#e67e22;font-weight:500;margin-bottom:6px;'>📊 评分区间：{score_range}</div>",
                     unsafe_allow_html=True,
                 )
                 scores[criterion_name] = st.number_input(
@@ -284,19 +286,39 @@ def render_scoring_page(judge: dict):
         if deduction_total > 0:
             st.warning(f"扣分合计：{deduction_total} 分")
 
-    # === 线上赛：否决项警告 ===
+    # === 线上赛：否决项（勾选后总分归零） ===
+    veto_triggered = False
     if veto_def:
         st.markdown("---")
         st.markdown("#### 🚫 否决项")
+        st.caption("如触发以下任何否决项，选手总分直接计 0 分，请谨慎勾选")
         for veto_name, veto_info in veto_def.items():
-            st.error(f"**{veto_name}**：{veto_info['description']}")
-        st.caption("如触发以上任何否决项，演示环节计 0 分")
+            checked = st.checkbox(
+                f"🚨 **{veto_name}**",
+                key=f"veto_{veto_name}_{submit_round}",
+                help=veto_info["description"],
+            )
+            if checked:
+                veto_triggered = True
+                st.error(f"⚠️ 已触发否决项：{veto_info['description']}")
 
-    # 实时总分
+    # 实时总分（含扣分和否决项）
     raw_total = sum(scores.values())
-    final_total = max(0, raw_total - deduction_total)
+    if veto_triggered:
+        final_total = 0
+    else:
+        final_total = max(0, raw_total - deduction_total)
 
-    if deductions_def:
+    if veto_triggered:
+        st.markdown(
+            f"<div style='background:#f8d7da;border:2px solid #dc3545;border-radius:15px;padding:20px;text-align:center;margin:15px 0;'>"
+            f"<div style='font-size:18px;font-weight:bold;color:#dc3545;'>🚫 否决项已触发</div>"
+            f"<div style='font-size:36px;font-weight:bold;color:#dc3545;margin:10px 0;'>0 / {total_max}</div>"
+            f"<div style='font-size:14px;color:#666;'>选手演示环节总分计 0 分</div>"
+            f"</div>",
+            unsafe_allow_html=True,
+        )
+    elif deductions_def:
         st.markdown(
             f"<div class='total-score-box'>"
             f"<div class='score-label'>原始总分</div>"
@@ -335,12 +357,20 @@ def render_scoring_page(judge: dict):
         if not contestant_id or not contestant_id.strip():
             st.error("请输入被评分选手的编号或姓名")
         else:
+            # 收集触发的否决项
+            veto_triggered_items = []
+            if veto_def:
+                for veto_name in veto_def:
+                    if st.session_state.get(f"veto_{veto_name}_{submit_round}", False):
+                        veto_triggered_items.append(veto_name)
             record = save_score(
                 judge,
                 contestant_id.strip(),
                 scores,
                 deductions=deductions_applied if deductions_applied else None,
                 final_score=final_total,
+                veto_triggered=veto_triggered,
+                veto_items=veto_triggered_items if veto_triggered_items else None,
             )
             st.success(
                 f"✅ {judge['name']} 裁判 → 选手 {record['contestant_id']} "

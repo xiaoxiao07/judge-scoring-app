@@ -131,6 +131,8 @@ def save_score(
     scores: dict,
     deductions: Optional[dict] = None,
     final_score: Optional[int] = None,
+    veto_triggered: bool = False,
+    veto_items: Optional[list] = None,
 ) -> dict:
     """
     保存一条评分记录
@@ -162,6 +164,9 @@ def save_score(
         record["deduction_total"] = sum(
             v for v in deductions.values() if isinstance(v, (int, float))
         )
+    if veto_triggered:
+        record["veto_triggered"] = True
+        record["veto_items"] = veto_items or []
 
     records.append(record)
     _write_json(file_path, records)
