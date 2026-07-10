@@ -66,11 +66,40 @@ st.markdown(
         font-size: 16px;
         font-weight: 600;
         margin-bottom: 2px;
+        color: #1a1a1a !important;
     }
     .score-card .criterion-desc {
         font-size: 12px;
-        color: #6c757d;
+        color: #555555 !important;
         margin-bottom: 8px;
+    }
+    .score-card .criterion-range {
+        font-size: 12px;
+        color: #e67e22 !important;
+        font-weight: 500;
+        margin-bottom: 6px;
+    }
+    /* 评分项卡片内数字输入框标签 */
+    .score-card label {
+        color: #1a1a1a !important;
+    }
+    /* 模块标题 */
+    .module-title {
+        font-size: 15px;
+        font-weight: 700;
+        color: #1a1a1a !important;
+        margin: 12px 0 8px 0;
+        padding-bottom: 4px;
+        border-bottom: 2px solid #4472C4;
+    }
+    /* 裁判信息栏 */
+    .judge-info-bar {
+        background: #e8f4f8;
+        border-radius: 10px;
+        padding: 10px 15px;
+        margin-bottom: 15px;
+        border-left: 4px solid #2196F3;
+        color: #1a1a1a !important;
     }
     /* 总分显示 */
     .total-score-box {
@@ -200,7 +229,7 @@ def render_scoring_page(judge: dict):
             module = info.get("module", "其他")
             modules.setdefault(module, []).append((name, info))
         for module_name, items in modules.items():
-            st.markdown(f"**{module_name}**")
+            st.markdown(f"<div class='module-title'>{module_name}</div>", unsafe_allow_html=True)
             for criterion_name, criterion_info in items:
                 max_score = criterion_info["max"]
                 desc = criterion_info["description"]
@@ -209,7 +238,7 @@ def render_scoring_page(judge: dict):
                     f"<div class='score-card'>"
                     f"<div class='criterion-name'>{criterion_name}</div>"
                     f"<div class='criterion-desc'>{desc}</div>"
-                    f"<div style='font-size:12px;color:#e67e22;font-weight:500;margin-bottom:6px;'>📊 评分区间：{score_range}</div>",
+                    f"<div class='criterion-range'>📊 评分区间：{score_range}</div>",
                     unsafe_allow_html=True,
                 )
                 scores[criterion_name] = st.number_input(
