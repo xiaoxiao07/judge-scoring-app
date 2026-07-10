@@ -87,10 +87,12 @@ st.markdown(
     .module-title {
         font-size: 15px;
         font-weight: 700;
-        color: #1a1a1a !important;
+        color: #FFFFFF !important;
         margin: 12px 0 8px 0;
-        padding-bottom: 4px;
-        border-bottom: 2px solid #4472C4;
+        padding: 8px 12px;
+        border-radius: 6px;
+        background: #4472C4;
+        border-bottom: 2px solid #2a4e8c;
     }
     /* 裁判信息栏 */
     .judge-info-bar {
