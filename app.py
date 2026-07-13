@@ -57,27 +57,28 @@ st.markdown(
     /* 评分项卡片样式 */
     .score-card {
         background: #f8f9fa;
-        border-radius: 10px;
-        padding: 15px 15px 5px 15px;
-        margin-bottom: 10px;
-        border: 1px solid #e9ecef;
+        border-radius: 12px;
+        padding: 18px 18px 8px 18px;
+        margin-bottom: 14px;
+        border: 1px solid #d0d0d0;
     }
     .score-card .criterion-name {
-        font-size: 16px;
-        font-weight: 600;
-        margin-bottom: 2px;
+        font-size: 18px;
+        font-weight: 700;
+        margin-bottom: 4px;
         color: #1a1a1a !important;
     }
     .score-card .criterion-desc {
-        font-size: 12px;
-        color: #555555 !important;
-        margin-bottom: 8px;
+        font-size: 15px;
+        color: #333333 !important;
+        margin-bottom: 10px;
+        line-height: 1.5;
     }
     .score-card .criterion-range {
-        font-size: 12px;
+        font-size: 14px;
         color: #e67e22 !important;
-        font-weight: 500;
-        margin-bottom: 6px;
+        font-weight: 600;
+        margin-bottom: 8px;
     }
     /* 评分项卡片内数字输入框标签 */
     .score-card label {
@@ -85,11 +86,11 @@ st.markdown(
     }
     /* 模块标题 */
     .module-title {
-        font-size: 15px;
+        font-size: 17px;
         font-weight: 700;
         color: #FFFFFF !important;
-        margin: 12px 0 8px 0;
-        padding: 8px 12px;
+        margin: 16px 0 10px 0;
+        padding: 10px 14px;
         border-radius: 6px;
         background: #4472C4;
         border-bottom: 2px solid #2a4e8c;
