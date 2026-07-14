@@ -226,17 +226,28 @@ def render_scoring_page(judge: dict):
     st.markdown("#### 评分项")
 
     if group == "线上实操":
-        # 线上实操按考核模块分组显示
+        # 线上实操按考核模块分组显示，扣分项内联到对应评分项
         modules = {}
         for name, info in criteria.items():
             module = info.get("module", "其他")
             modules.setdefault(module, []).append((name, info))
+
+        # 收集内联扣分项 key（出现在 criteria 的 deduction_key 中）
+        inline_ded_keys = set()
+        for info in criteria.values():
+            if info.get("deduction_key"):
+                inline_ded_keys.add(info["deduction_key"])
+
+        deductions_applied = {}
+
         for module_name, items in modules.items():
             st.markdown(f"<div class='module-title'>{module_name}</div>", unsafe_allow_html=True)
             for criterion_name, criterion_info in items:
                 max_score = criterion_info["max"]
                 desc = criterion_info["description"]
                 score_range = criterion_info.get("score_range", f"0~{max_score}分")
+                ded_key = criterion_info.get("deduction_key")
+
                 st.markdown(
                     f"<div class='score-card'>"
                     f"<div class='criterion-name'>{criterion_name}</div>"
@@ -244,6 +255,8 @@ def render_scoring_page(judge: dict):
                     f"<div class='criterion-range'>📊 评分区间：{score_range}</div>",
                     unsafe_allow_html=True,
                 )
+
+                # 得分输入
                 scores[criterion_name] = st.number_input(
                     label=criterion_name,
                     min_value=0,
@@ -253,7 +266,54 @@ def render_scoring_page(judge: dict):
                     key=f"score_{criterion_name}_{submit_round}",
                     label_visibility="collapsed",
                 )
+
+                # 如果有对应扣分项，内联显示在评分项下方
+                if ded_key and ded_key in deductions_def:
+                    ded_info = deductions_def[ded_key]
+                    deduct_val = ded_info["deduct"]
+                    ded_desc = ded_info["description"]
+                    st.markdown(
+                        f"<div style='font-size:13px;color:#c0392b;font-weight:600;margin:6px 0 2px 0;'>⛔ 扣分：{ded_key}</div>",
+                        unsafe_allow_html=True,
+                    )
+                    st.caption(ded_desc)
+                    if deduct_val == "half":
+                        bad_steps = st.number_input(
+                            label=f"问题步数-{ded_key}",
+                            min_value=0,
+                            max_value=6,
+                            value=0,
+                            step=1,
+                            key=f"ded_steps_{ded_key}_{submit_round}",
+                        )
+                        if bad_steps > 0:
+                            step_deduct = bad_steps * 1
+                            deductions_applied[ded_key] = step_deduct
+                            st.caption(f"🔴 扣 {step_deduct} 分")
+
                 st.markdown("</div>", unsafe_allow_html=True)
+
+        # === 剩余的扣分项（未内联的） ===
+        remaining_ded = {k: v for k, v in deductions_def.items() if k not in inline_ded_keys}
+        if remaining_ded:
+            st.markdown("---")
+            st.markdown("#### ⚠️ 其他扣分项")
+            st.caption("如存在以下情况，勾选对应扣分项")
+            for ded_name, ded_info in remaining_ded.items():
+                deduct_val = ded_info["deduct"]
+                desc = ded_info["description"]
+                checked = st.checkbox(
+                    f"{ded_name}（扣 {deduct_val} 分）",
+                    key=f"ded_{ded_name}_{submit_round}",
+                    help=desc,
+                )
+                if checked:
+                    deductions_applied[ded_name] = deduct_val
+
+        deduction_total = sum(deductions_applied.values())
+        if deduction_total > 0:
+            st.warning(f"扣分合计：{deduction_total} 分")
+
     else:
         # 其他组直接显示
         for criterion_name, criterion_info in criteria.items():
@@ -276,53 +336,15 @@ def render_scoring_page(judge: dict):
             )
             st.markdown("</div>", unsafe_allow_html=True)
 
-    # === 线上实操：扣分项 ===
-    deduction_total = 0
-    deductions_applied = {}
-    if deductions_def:
-        st.markdown("---")
-        st.markdown("#### ⚠️ 扣分项")
-        st.caption("如存在以下情况，勾选对应扣分项")
-        for ded_name, ded_info in deductions_def.items():
-            deduct_val = ded_info["deduct"]
-            desc = ded_info["description"]
-            if deduct_val == "half":
-                col1, col2 = st.columns([3, 1])
-                with col1:
-                    st.markdown(f"**{ded_name}**")
-                    st.caption(desc)
-                with col2:
-                    bad_steps = st.number_input(
-                        label=f"问题步数-{ded_name}",
-                        min_value=0,
-                        max_value=6,
-                        value=0,
-                        step=1,
-                        key=f"ded_steps_{ded_name}_{submit_round}",
-                        label_visibility="collapsed",
-                    )
-                    if bad_steps > 0:
-                        step_deduct = bad_steps * 1
-                        deductions_applied[ded_name] = step_deduct
-                        st.caption(f"扣 {step_deduct} 分")
-            else:
-                checked = st.checkbox(
-                    f"{ded_name}（扣 {deduct_val} 分）",
-                    key=f"ded_{ded_name}_{submit_round}",
-                    help=desc,
-                )
-                if checked:
-                    deductions_applied[ded_name] = deduct_val
+    # === 通用扣分项（答辩组/实操组没有） ===
+    # 对于非线上实操组，使用原有的扣分逻辑（空字典）
+    if group != "线上实操":
+        deductions_applied = {}
+        deduction_total = 0
 
-        deduction_total = sum(deductions_applied.values())
-        if deduction_total > 0:
-            st.warning(f"扣分合计：{deduction_total} 分")
-
-    # === 线上实操：否决项（勾选后总分归零） ===
+    # === 否决项（勾选后总分归零） ===
     veto_triggered = False
     if veto_def:
-        st.markdown("---")
-        st.markdown("#### 🚫 否决项")
         st.caption("如触发以下任何否决项，选手总分直接计 0 分，请谨慎勾选")
         for veto_name, veto_info in veto_def.items():
             checked = st.checkbox(
