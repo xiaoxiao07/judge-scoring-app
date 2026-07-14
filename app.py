@@ -225,8 +225,8 @@ def render_scoring_page(judge: dict):
     scores = {}
     st.markdown("#### 评分项")
 
-    if group == "线上赛":
-        # 线上赛按考核模块分组显示
+    if group == "线上实操":
+        # 线上实操按考核模块分组显示
         modules = {}
         for name, info in criteria.items():
             module = info.get("module", "其他")
@@ -276,7 +276,7 @@ def render_scoring_page(judge: dict):
             )
             st.markdown("</div>", unsafe_allow_html=True)
 
-    # === 线上赛：扣分项 ===
+    # === 线上实操：扣分项 ===
     deduction_total = 0
     deductions_applied = {}
     if deductions_def:
@@ -318,7 +318,7 @@ def render_scoring_page(judge: dict):
         if deduction_total > 0:
             st.warning(f"扣分合计：{deduction_total} 分")
 
-    # === 线上赛：否决项（勾选后总分归零） ===
+    # === 线上实操：否决项（勾选后总分归零） ===
     veto_triggered = False
     if veto_def:
         st.markdown("---")
