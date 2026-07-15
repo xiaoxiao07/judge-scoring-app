@@ -87,6 +87,58 @@ st.markdown(
         color: #4472C4 !important;
         background: transparent !important;
     }
+
+    /* === tooltip 全局强制覆盖 === */
+    /* 所有 tooltip 弹窗，包括 checkbox 和其他元素的悬停提示 */
+    div[data-baseweb=\"tooltip\"],
+    div[role=\"tooltip\"],
+    [data-testid=\"tooltip\"] {
+        background: #333333 !important;
+        background-color: #333333 !important;
+    }
+    div[data-baseweb=\"tooltip\"] *,
+    div[role=\"tooltip\"] *,
+    [data-testid=\"tooltip\"] * {
+        color: #FFFFFF !important;
+        fill: #FFFFFF !important;
+        background: transparent !important;
+        font-size: 14px !important;
+    }
+    /* 弹窗内的 div 和 span 可能被 global 覆盖 */
+    [data-baseweb=\"tooltip\"] div,
+    [data-baseweb=\"tooltip\"] span,
+    [data-baseweb=\"tooltip\"] p,
+    [role=\"tooltip\"] div,
+    [role=\"tooltip\"] span,
+    [role=\"tooltip\"] p,
+    [data-testid=\"tooltip\"] div,
+    [data-testid=\"tooltip\"] span,
+    [data-testid=\"tooltip\"] p {
+        color: #FFFFFF !important;
+        background: transparent !important;
+    }
+    [data-baseweb=\"tooltip\"] [style*=\"arrow\"],
+    [data-baseweb=\"tooltip\"] [style*=\"Arrow\"] {
+        background-color: #333333 !important;
+    }
+
+    /* === tooltip 弹窗强制覆盖 === */
+    /* 这里要覆盖上面的下拉菜单规则 */
+    /* Streamlit checkbox的help tooltip弹窗是用baseweb Popover渲染的 */
+    [data-baseweb=\"popover\"][role=\"tooltip\"],
+    [data-baseweb=\"popover\"][role=\"tooltip\"] div,
+    [data-baseweb=\"popover\"][role=\"tooltip\"] span,
+    [data-baseweb=\"popover\"][role=\"tooltip\"] p,
+    [data-baseweb=\"popover\"][aria-label*=\"tooltip\"],
+    [data-baseweb=\"popover\"].tooltip,
+    div[data-baseweb=\"tooltip\"],
+    div[data-baseweb=\"tooltip\"] div,
+    div[data-baseweb=\"tooltip\"] span,
+    div[data-baseweb=\"tooltip\"] p {
+        background: #333333 !important;
+        background-color: #333333 !important;
+        color: #FFFFFF !important;
+    }
 </style>
 """,
     unsafe_allow_html=True,
