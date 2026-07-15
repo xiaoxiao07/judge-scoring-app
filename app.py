@@ -65,6 +65,28 @@ st.markdown(
         background-color: #FFFFFF !important;
         border: 1px solid #c0c0c0 !important;
     }
+    /* === checkbox 问号提示弹窗 - 白字深背景 === */
+    .stCheckbox div[role=\"tooltip\"],
+    .stCheckbox [data-testid=\"tooltip\"],
+    .stCheckbox [data-baseweb=\"tooltip\"],
+    .stCheckbox [data-baseweb=\"tooltip\"] *,
+    [data-testid=\"stWidgetLabel\"] [role=\"tooltip\"],
+    [data-testid=\"stWidgetLabel\"] [data-baseweb=\"tooltip\"],
+    [data-testid=\"stWidgetLabel\"] [data-baseweb=\"tooltip\"] *,
+    label [role=\"tooltip\"],
+    label [data-baseweb=\"tooltip\"],
+    label [data-baseweb=\"tooltip\"] * {
+        background: #333333 !important;
+        color: #FFFFFF !important;
+    }
+    /* 问号图标本身 */
+    .stCheckbox .stTooltipIcon,
+    .stCheckbox [data-testid=\"stTooltipIcon\"],
+    .stCheckbox [data-testid=\"stTooltipIcon\"] svg {
+        fill: #4472C4 !important;
+        color: #4472C4 !important;
+        background: transparent !important;
+    }
 </style>
 """,
     unsafe_allow_html=True,
