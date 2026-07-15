@@ -221,6 +221,21 @@ def render_scoring_page(judge: dict):
         key=f"contestant_id_{submit_round}",
     )
 
+    # === 线上实操：用时输入 ===
+    duration = ""
+    if group == "线上实操":
+        col_t1, col_t2 = st.columns([1, 2])
+        with col_t1:
+            st.markdown("**⏱ 用时**")
+        with col_t2:
+            duration = st.text_input(
+                label="仿真演示用时",
+                placeholder="如: 4分30秒",
+                key=f"duration_{submit_round}",
+                label_visibility="collapsed",
+            )
+        st.caption("记录选手仿真演示实际耗时，总分相同时用时短者排名靠前")
+
     # 评分项 — 使用数字输入
     scores = {}
     st.markdown("#### 评分项")
@@ -315,14 +330,16 @@ def render_scoring_page(judge: dict):
             st.warning(f"扣分合计：{deduction_total} 分")
 
     else:
-        # 其他组直接显示
+        # 其他组直接显示（答辩组、实操组、线上答辩）
         for criterion_name, criterion_info in criteria.items():
             max_score = criterion_info["max"]
             desc = criterion_info["description"]
+            score_range = criterion_info.get("score_range", f"满分 {max_score} 分")
             st.markdown(
                 f"<div class='score-card'>"
                 f"<div class='criterion-name'>{criterion_name}</div>"
-                f"<div class='criterion-desc'>{desc}（满分 {max_score} 分）</div>",
+                f"<div class='criterion-desc'>{desc}</div>"
+                f"<div class='criterion-range'>📊 评分区间：{score_range}</div>",
                 unsafe_allow_html=True,
             )
             scores[criterion_name] = st.number_input(
@@ -425,6 +442,7 @@ def render_scoring_page(judge: dict):
                 final_score=final_total,
                 veto_triggered=veto_triggered,
                 veto_items=veto_triggered_items if veto_triggered_items else None,
+                duration=duration if duration else None,
             )
             st.success(
                 f"✅ {judge['name']} 裁判 → 选手 {record['contestant_id']} "

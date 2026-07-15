@@ -1,6 +1,6 @@
 """
 评分标准定义模块
-定义答辩组、实操组和线上实操的评分项、分值范围及描述
+定义答辩组、实操组、线上实操和线上答辩的评分项、分值范围及描述
 """
 
 # 答辩组评分标准
@@ -118,11 +118,36 @@ ONLINE_VETO = {
     },
 }
 
+# 线上答辩评分标准（总分100分）- 依据 01答辩打分表end.xlsx
+DEFENSE_ONLINE_CRITERIA = {
+    "大模型思路讲解/语音交互方案": {
+        "max": 30,
+        "description": "讲解大模型解析思路、智能体设计及语音交互方案",
+        "score_range": "0~30分",
+    },
+    "视觉流程": {
+        "max": 30,
+        "description": "讲解VisionMaster视觉流程设计与数据协议实现",
+        "score_range": "0~30分",
+    },
+    "机器人控制": {
+        "max": 30,
+        "description": "讲解机器人控制逻辑与仿真运动方案",
+        "score_range": "0~30分",
+    },
+    "创新性/答辩流畅": {
+        "max": 10,
+        "description": "方案创新性、答辩表达流畅度与时间把控",
+        "score_range": "0~10分",
+    },
+}
+
 # 组别映射
 GROUP_CRITERIA = {
     "答辩组": DEFENSE_CRITERIA,
     "实操组": PRACTICAL_CRITERIA,
     "线上实操": ONLINE_CRITERIA,
+    "线上答辩": DEFENSE_ONLINE_CRITERIA,
 }
 
 # 各组总分
@@ -130,6 +155,7 @@ GROUP_TOTAL = {
     "答辩组": sum(c["max"] for c in DEFENSE_CRITERIA.values()),
     "实操组": sum(c["max"] for c in PRACTICAL_CRITERIA.values()),
     "线上实操": sum(c["max"] for c in ONLINE_CRITERIA.values()),
+    "线上答辩": sum(c["max"] for c in DEFENSE_ONLINE_CRITERIA.values()),
 }
 
 
@@ -160,3 +186,4 @@ def get_veto(group: str) -> dict:
     if group == "线上实操":
         return ONLINE_VETO
     return {}
+

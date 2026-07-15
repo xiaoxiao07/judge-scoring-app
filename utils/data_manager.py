@@ -25,6 +25,7 @@ SCORE_FILES = {
     "答辩组": DATA_DIR / "scores_答辩组.json",
     "实操组": DATA_DIR / "scores_实操组.json",
     "线上实操": DATA_DIR / "scores_线上赛.json",
+    "线上答辩": DATA_DIR / "scores_线上答辩.json",
 }
 
 
@@ -133,6 +134,7 @@ def save_score(
     final_score: Optional[int] = None,
     veto_triggered: bool = False,
     veto_items: Optional[list] = None,
+    duration: Optional[str] = None,
 ) -> dict:
     """
     保存一条评分记录
@@ -159,6 +161,8 @@ def save_score(
         "total_max": total_max,
         "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
     }
+    if duration:
+        record["duration"] = duration
     if deductions:
         record["deductions"] = deductions
         record["deduction_total"] = sum(
