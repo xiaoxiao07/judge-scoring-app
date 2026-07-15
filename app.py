@@ -146,6 +146,62 @@ st.markdown(
     .stCheckbox span, .stCheckbox p {
         color: #1a1a1a !important;
     }
+
+    /* tooltip 提示框 - 白底黑字 */
+    div[role="tooltip"], [data-testid="tooltip"],
+    .stTooltip, .stTooltip div, .stTooltip span,
+    div[data-baseweb="tooltip"],
+    div[data-baseweb="tooltip"] div,
+    div[data-baseweb="tooltip"] span,
+    div[data-baseweb="tooltip"] p {
+        background: #FFFFFF !important;
+        color: #1a1a1a !important;
+        border: 1px solid #c0c0c0 !important;
+        box-shadow: 2px 2px 8px rgba(0,0,0,0.15) !important;
+    }
+    /* 提交评分按钮 - 确保完全可见 */
+    button[type="primary"],
+    .stButton button[type="primary"],
+    button:has(div:contains("提交评分")),
+    button[kind="primary"] {
+        background: #4472C4 !important;
+        color: #FFFFFF !important;
+        font-weight: 700 !important;
+        font-size: 18px !important;
+        border: 2px solid #2a4e8c !important;
+    }
+    button[type="primary"]:hover {
+        background: #3561a8 !important;
+    }
+    /* 提交按钮中的任何文字 */
+    button[type="primary"] div,
+    button[type="primary"] span,
+    button[type="primary"] p,
+    button[type="primary"] * {
+        color: #FFFFFF !important;
+    }
+    /* help 图标 (问号圆圈) */
+    .stTooltipIcon, .stTooltipIcon svg,
+    [data-testid="stTooltipIcon"],
+    .stCheckbox span[data-testid="stTooltipIcon"],
+    .stCheckbox span[data-testid="stTooltipIcon"] svg {
+        fill: #1a1a1a !important;
+        color: #1a1a1a !important;
+    }
+    /* checkbox 帮助提示 */
+    .stCheckbox div[data-testid="stTooltip"] * {
+        background: #FFFFFF !important;
+        color: #1a1a1a !important;
+    }
+    /* 数字输入框全部 */
+    .stNumberInput, .stNumberInput div,
+    .stNumberInput input, .stNumberInput button {
+        background: #FFFFFF !important;
+        color: #1a1a1a !important;
+    }
+    .stNumberInput input {
+        border: 1px solid #c0c0c0 !important;
+    }
 </style>
 """,
     unsafe_allow_html=True,
