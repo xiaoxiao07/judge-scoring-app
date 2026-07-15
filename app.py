@@ -98,6 +98,54 @@ st.markdown(
     button[kind="primary"], button[kind="primary"] * {
         color: #FFFFFF !important;
     }
+
+    /* 提交按钮 - 确保文字白色可见 */
+    .stButton button[type="primary"],
+    button[kind="primary"],
+    button[data-testid="baseButton-primary"],
+    .stButton button[kind="primary"] {
+        background: #4472C4 !important;
+        color: #FFFFFF !important;
+        font-weight: 700 !important;
+        border: none !important;
+    }
+    .stButton button[type="primary"]:hover,
+    button[kind="primary"]:hover {
+        background: #3561a8 !important;
+    }
+    /* 提交按钮禁用状态 */
+    .stButton button[type="primary"]:disabled,
+    button[kind="primary"]:disabled {
+        background: #a0b8d8 !important;
+        color: #dddddd !important;
+    }
+    /* 扣分项红色提示文字 */
+    div[style*="color:#c0392b"] {
+        color: #c0392b !important;
+        font-weight: 700 !important;
+    }
+    /* 所有 caption/说明文字 */
+    .stCaption, caption, .caption, small,
+    div[data-testid="stCaption"] {
+        color: #555555 !important;
+    }
+    /* 扣分 caption 加强 */
+    .stCaption strong, .stCaption b, 
+    caption strong, caption b {
+        color: #c0392b !important;
+    }
+    /* number_input 的步进按钮 */
+    .stNumberInput button, .stNumberInput button:hover,
+    .stNumberInput button:active {
+        background: #f0f0f0 !important;
+        color: #1a1a1a !important;
+        border: 1px solid #c0c0c0 !important;
+    }
+    /* 扣分项的 checkbox 标签 */
+    .stCheckbox label, .stCheckbox div,
+    .stCheckbox span, .stCheckbox p {
+        color: #1a1a1a !important;
+    }
 </style>
 """,
     unsafe_allow_html=True,
