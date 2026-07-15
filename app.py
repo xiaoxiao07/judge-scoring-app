@@ -45,6 +45,10 @@ init_data_files()
 st.markdown(
     """
 <style>
+    /* 整体白色背景 */
+    .stApp, .stAppViewContainer, .main, .block-container {
+        background: #FFFFFF !important;
+    }
     /* 移动端触摸友好 */
     .stSlider > div[data-testid="stThumbValue"] {
         font-size: 16px !important;
@@ -152,14 +156,38 @@ st.markdown(
         font-size: 17px !important;
         min-height: 48px !important;
     }
-    /* radio 按钮样式 */
-    div[role="radiogroup"] label {
-        font-size: 16px !important;
-        min-height: 38px;
-        padding: 6px 14px !important;
-    }
+    /* radio 按钮样式 - 大触摸目标 */
     div[role="radiogroup"] {
-        gap: 4px !important;
+        gap: 6px !important;
+        flex-wrap: wrap !important;
+    }
+    div[role="radiogroup"] label {
+        font-size: 18px !important;
+        min-height: 44px !important;
+        min-width: 44px !important;
+        padding: 8px 18px !important;
+        border-radius: 8px !important;
+        border: 2px solid #c0c0c0 !important;
+        background: #f0f0f0 !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        margin: 2px !important;
+        cursor: pointer !important;
+    }
+    div[role="radiogroup"] label:hover {
+        border-color: #4472C4 !important;
+        background: #e3ecfa !important;
+    }
+    /* 选中状态蓝底白字 */
+    div[role="radiogroup"] label[data-checked="true"] {
+        border-color: #4472C4 !important;
+        background: #4472C4 !important;
+        color: #FFFFFF !important;
+    }
+    /* 隐藏 radio 圆点 */
+    div[role="radiogroup"] input {
+        display: none !important;
     }
 </style>
 """,
