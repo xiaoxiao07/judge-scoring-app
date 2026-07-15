@@ -144,17 +144,15 @@ DEFENSE_ONLINE_CRITERIA = {
 
 # 组别映射
 GROUP_CRITERIA = {
-    "答辩组": DEFENSE_CRITERIA,
-    "实操组": PRACTICAL_CRITERIA,
     "线上实操": ONLINE_CRITERIA,
+    "线下实操": ONLINE_CRITERIA,  # 与线上实操评分项相同，UI 不同（选钮）
     "线上答辩": DEFENSE_ONLINE_CRITERIA,
 }
 
 # 各组总分
 GROUP_TOTAL = {
-    "答辩组": sum(c["max"] for c in DEFENSE_CRITERIA.values()),
-    "实操组": sum(c["max"] for c in PRACTICAL_CRITERIA.values()),
     "线上实操": sum(c["max"] for c in ONLINE_CRITERIA.values()),
+    "线下实操": sum(c["max"] for c in ONLINE_CRITERIA.values()),
     "线上答辩": sum(c["max"] for c in DEFENSE_ONLINE_CRITERIA.values()),
 }
 
@@ -175,15 +173,15 @@ def get_groups() -> list:
 
 
 def get_deductions(group: str) -> dict:
-    """获取扣分项定义（目前仅线上实操有）"""
-    if group == "线上实操":
+    """获取扣分项定义（线上实操/线下实操有）"""
+    if group in ("线上实操", "线下实操"):
         return ONLINE_DEDUCTIONS
     return {}
 
 
 def get_veto(group: str) -> dict:
-    """获取否决项定义（目前仅线上实操有）"""
-    if group == "线上实操":
+    """获取否决项定义（线上实操/线下实操有）"""
+    if group in ("线上实操", "线下实操"):
         return ONLINE_VETO
     return {}
 

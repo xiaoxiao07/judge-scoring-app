@@ -22,9 +22,8 @@ JUDGES_FILE = DATA_DIR / "judges.json"
 
 # 评分记录文件（每组一个文件）
 SCORE_FILES = {
-    "答辩组": DATA_DIR / "scores_答辩组.json",
-    "实操组": DATA_DIR / "scores_实操组.json",
     "线上实操": DATA_DIR / "scores_线上赛.json",
+    "线下实操": DATA_DIR / "scores_线下实操.json",
     "线上答辩": DATA_DIR / "scores_线上答辩.json",
 }
 
@@ -226,12 +225,20 @@ def export_to_excel(group: str) -> Optional[Path]:
 
     # 构建表头
     score_headers = [f"{k}({v['max']})" for k, v in criteria.items()]
+    has_duration = any("duration" in r and r["duration"] for r in records)
     headers = ["裁判姓名", "裁判编号", "裁判组", "选手编号/姓名"] + score_headers + ["原始总分", "扣分", "最终总分", "评分时间"]
+    if has_duration:
+        # 在选手编号后面插入用时列
+        idx = headers.index("选手编号/姓名") + 1
+        headers.insert(idx, "用时")
+        inserted_duration = True
+    else:
+        inserted_duration = False
 
     _style_header(ws, headers)
 
     # 填充数据
-    data_font = Font(size=11)
+    data_font = Font(size=12)
     center_align = Alignment(horizontal="center", vertical="center")
     thin_border = Border(
         left=Side(style="thin"),
@@ -247,6 +254,8 @@ def export_to_excel(group: str) -> Optional[Path]:
             record["judge_group"],
             record["contestant_id"],
         ]
+        if inserted_duration:
+            row_data.append(record.get("duration", ""))
         # 各评分项得分
         for criterion_key in criteria:
             row_data.append(record["scores"].get(criterion_key, 0))
