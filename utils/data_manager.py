@@ -25,6 +25,7 @@ SCORE_FILES = {
     "线上实操": DATA_DIR / "scores_线上赛.json",
     "线下实操": DATA_DIR / "scores_线下实操.json",
     "线上答辩": DATA_DIR / "scores_线上答辩.json",
+    "甘肃线下实操": DATA_DIR / "scores_甘肃线下实操.json",
 }
 
 
