@@ -1,8 +1,9 @@
 """
 数据存储管理模块
-负责 JSON 数据的读写、Excel 导出、数据文件初始化
+负责 JSON 数据的读写、Excel 导出、数据文件初始化、GitHub 持久化同步
 """
 
+import base64
 import json
 import os
 from datetime import datetime
@@ -28,24 +29,133 @@ SCORE_FILES = {
     "甘肃线下实操": DATA_DIR / "scores_甘肃线下实操.json",
 }
 
+# GitHub 仓库信息（公开仓库，读不需要 token）
+GITHUB_REPO = "xiaoxiao07/judge-scoring-app"
+GITHUB_BRANCH = "main"
+GITHUB_RAW_BASE = f"https://raw.githubusercontent.com/{GITHUB_REPO}/{GITHUB_BRANCH}/"
+
+
+def _get_github_token() -> str:
+    """从 Streamlit secrets 或环境变量获取 GitHub token"""
+    try:
+        import streamlit as st
+        return st.secrets.get("GITHUB_TOKEN", "")
+    except Exception:
+        return os.environ.get("GITHUB_TOKEN", "")
+
+
+def _load_from_github(file_path: Path, repo_path: str) -> bool:
+    """
+    从 GitHub raw 加载文件到本地
+    file_path: 本地文件路径
+    repo_path: GitHub 上的相对路径（如 data/scores_线上赛.json）
+    返回是否成功加载
+    """
+    url = GITHUB_RAW_BASE + repo_path
+    try:
+        import requests
+        resp = requests.get(url, timeout=10)
+        if resp.status_code == 200:
+            data = resp.json()
+            if isinstance(data, list):
+                _write_json(file_path, data)
+                return True
+    except Exception:
+        pass
+    return False
+
+
+def _sync_to_github(file_path: Path, repo_path: str, commit_msg: str) -> bool:
+    """
+    将本地文件推送到 GitHub（通过 API）
+    file_path: 本地文件路径
+    repo_path: GitHub 上的相对路径
+    commit_msg: 提交信息
+    返回是否成功
+    """
+    token = _get_github_token()
+    if not token:
+        return False
+
+    url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{repo_path}"
+
+    try:
+        with open(file_path, "r", encoding="utf-8") as f:
+            content = f.read()
+
+        encoded = base64.b64encode(content.encode("utf-8")).decode("utf-8")
+
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Accept": "application/vnd.github.v3+json",
+        }
+
+        import requests
+
+        # 先获取文件当前 SHA（如果存在）
+        resp = requests.get(url, headers=headers)
+        sha = resp.json().get("sha") if resp.status_code == 200 else None
+
+        data = {
+            "message": commit_msg,
+            "content": encoded,
+            "branch": GITHUB_BRANCH,
+        }
+        if sha:
+            data["sha"] = sha
+
+        resp = requests.put(url, json=data, headers=headers)
+        return resp.status_code in (200, 201)
+    except Exception:
+        return False
+
+
+def _sync_judges_to_github() -> bool:
+    """同步裁判信息到 GitHub"""
+    return _sync_to_github(
+        JUDGES_FILE,
+        "data/judges.json",
+        f"Auto-sync: update judges info",
+    )
+
+
+def _sync_scores_to_github(group: str) -> bool:
+    """同步指定组的评分记录到 GitHub"""
+    if group not in SCORE_FILES:
+        return False
+    file_path = SCORE_FILES[group]
+    repo_path = f"data/{file_path.name}"
+    return _sync_to_github(
+        file_path,
+        repo_path,
+        f"Auto-sync: update {group} scores",
+    )
+
 
 def init_data_files():
     """
     初始化数据文件和目录
-    在程序启动时调用，确保所有必需的数据文件存在
+    在程序启动时调用，从 GitHub 拉取最新数据恢复
     """
     DATA_DIR.mkdir(parents=True, exist_ok=True)
 
-    # 初始化裁判信息文件
+    # 先初始化本地空文件
     if not JUDGES_FILE.exists():
         _write_json(JUDGES_FILE, [])
 
-    # 初始化各组评分记录文件
     for group in get_groups():
         if group not in SCORE_FILES:
             continue
         if not SCORE_FILES[group].exists():
             _write_json(SCORE_FILES[group], [])
+
+    # 尝试从 GitHub 拉取最新数据（覆盖本地空文件）
+    _load_from_github(JUDGES_FILE, "data/judges.json")
+    for group in get_groups():
+        if group in SCORE_FILES:
+            file_path = SCORE_FILES[group]
+            repo_path = f"data/{file_path.name}"
+            _load_from_github(file_path, repo_path)
 
 
 def _read_json(file_path: Path) -> list:
@@ -97,6 +207,8 @@ def register_judge(name: str, judge_id: str, group: str) -> dict:
     }
     judges.append(judge_info)
     _write_json(JUDGES_FILE, judges)
+    # 同步到 GitHub（异步不阻塞）
+    _sync_judges_to_github()
     return judge_info
 
 
@@ -174,6 +286,8 @@ def save_score(
 
     records.append(record)
     _write_json(file_path, records)
+    # 同步到 GitHub（不阻塞评分流程）
+    _sync_scores_to_github(group)
     return record
 
 

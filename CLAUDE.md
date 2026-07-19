@@ -9,8 +9,9 @@ https://judge-scoring-app-nusac.streamlit.app/
 - app.py — 主程序（页面路由 + UI + CSS 都在这里）
 - utils/scoring.py — 评分标准定义
 - utils/auth.py — 登录鉴权
-- utils/data_manager.py — 数据存储 + Excel 导出
-- data/ — 评分数据 JSON 文件（部署更新会丢失！注意备份）
+- utils/data_manager.py — 数据存储 + Excel 导出 + GitHub 持久化同步
+- data/ — 评分数据 JSON 文件（通过 GitHub API 自动持久化）
+- .streamlit/secrets.example.toml — GitHub Token 配置模板
 
 ## 裁判分组（4组）
 1. 线上实操（70分）— 数字输入 + 用时 + 扣分项 + 否决项
@@ -23,8 +24,17 @@ https://judge-scoring-app-nusac.streamlit.app/
 ## 管理密码
 zpds2026
 
-## 数据备份
-每次 git push 部署新版本，data/ 目录会丢失。部署前先在管理页导出 Excel 备份。
+## 数据持久化（2026-07-19 新增）
+- 每次提交评分后自动通过 GitHub API 推送到仓库
+- 每次应用启动时从 GitHub raw 拉取最新数据
+- 需要配置 GitHub Personal Access Token（见下方说明）
+- 未配置 token 时仍可本地使用（不回丢失已有功能）
+
+## GitHub Token 配置
+1. 创建 token：GitHub → Settings → Developer settings → Personal access tokens → Fine-grained tokens
+2. 权限：只选 Contents (Read and write)，仓库选择 xiaoxiao07/judge-scoring-app
+3. 本地测试：复制 .streamlit/secrets.example.toml 为 .streamlit/secrets.toml，填入 token
+4. 部署配置：Streamlit Cloud → App settings → Secrets → 填入 GITHUB_TOKEN = "xxx"
 
 ## Git 推送（网络问题）
 如果连不上 github.com，用代理：
