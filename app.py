@@ -434,47 +434,60 @@ def render_scoring_page(judge: dict):
                     f"<div class='criterion-range'>📊 评分区间：{score_range}</div>",
                     unsafe_allow_html=True,
                 )
-                sel = st.radio(
-                    label=criterion_name,
-                    options=[str(o) for o in options],
-                    index=0,
-                    horizontal=True,
-                    key=f"score_{criterion_name}_{submit_round}",
-                    label_visibility="collapsed",
-                )
-                scores[criterion_name] = int(sel)
+                # 支持两种选项格式：简单列表 [0,2,4] 或 label-value 字典列表
+                if options and isinstance(options[0], dict):
+                    option_labels = [o["label"] for o in options]
+                    label_to_value = {o["label"]: o["value"] for o in options}
+                    sel = st.radio(
+                        label=criterion_name,
+                        options=option_labels,
+                        index=0,
+                        horizontal=True,
+                        key=f"score_{criterion_name}_{submit_round}",
+                        label_visibility="collapsed",
+                    )
+                    scores[criterion_name] = label_to_value[sel]
+                else:
+                    sel = st.radio(
+                        label=criterion_name,
+                        options=[str(o) for o in options],
+                        index=0,
+                        horizontal=True,
+                        key=f"score_{criterion_name}_{submit_round}",
+                        label_visibility="collapsed",
+                    )
+                    scores[criterion_name] = int(sel)
                 st.markdown("</div>", unsafe_allow_html=True)
 
-        # 扣分项
+        # 扣分项 — 直接填写扣分分值
         if deductions_def:
             st.markdown("---")
             st.markdown("#### ⚠️ 扣分项")
-            st.caption("如存在以下情况，勾选对应扣分项或输入次数")
+            st.caption("如存在以下情况，直接填写扣分分值（0表示无扣分）")
             for ded_name, ded_info in deductions_def.items():
                 deduct_val = ded_info["deduct"]
                 desc = ded_info["description"]
                 mode = ded_info.get("mode", "checkbox")
-                if mode == "per_step":
-                    count = st.number_input(
-                        label=f"{ded_name}（每次扣{deduct_val}分）",
-                        min_value=0, max_value=20, value=0, step=1,
-                        key=f"ded_{ded_name}_{submit_round}",
-                        help=desc,
-                    )
-                    if count > 0:
-                        deductions_applied[ded_name] = count * deduct_val
-                else:
+                if mode in ("per_step", "score_zero"):
+                    max_deduct = 100
                     if mode == "score_zero":
-                        label = f"⚠️ {ded_name}（总分归零）"
+                        help_text = f"{desc}（标准：总分归零）"
                     else:
-                        label = f"{ded_name}（扣 {deduct_val} 分）"
-                    checked = st.checkbox(
-                        label,
-                        key=f"ded_{ded_name}_{submit_round}",
-                        help=desc,
-                    )
-                    if checked:
-                        deductions_applied[ded_name] = deduct_val
+                        help_text = f"{desc}（标准：每次扣 {deduct_val} 分）"
+                elif deduct_val <= 5:
+                    max_deduct = 50
+                    help_text = f"{desc}（标准：扣 {deduct_val} 分）"
+                else:
+                    max_deduct = deduct_val
+                    help_text = f"{desc}（标准：扣 {deduct_val} 分）"
+                score = st.number_input(
+                    label=f"{ded_name}",
+                    min_value=0, max_value=max_deduct, value=0, step=1,
+                    key=f"ded_{ded_name}_{submit_round}",
+                    help=help_text,
+                )
+                if score > 0:
+                    deductions_applied[ded_name] = score
             deduction_total = sum(deductions_applied.values())
             if deduction_total > 0:
                 st.warning(f"扣分合计：{deduction_total} 分")
