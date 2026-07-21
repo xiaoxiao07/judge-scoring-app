@@ -410,7 +410,7 @@ def render_scoring_page(judge: dict):
             st.warning(f"扣分合计：{deduction_total} 分")
 
     elif group == "甘肃线下实操":
-        # 甘肃线下实操：数字输入 + 扣分项 + 否决项
+        # 甘肃线下实操：选钮评分 + 扣分项 + 否决项
         modules = {}
         for name, info in criteria.items():
             module = info.get("module", "其他")
@@ -424,6 +424,8 @@ def render_scoring_page(judge: dict):
                 max_score = criterion_info["max"]
                 desc = criterion_info["description"]
                 score_range = criterion_info.get("score_range", f"0~{max_score}分")
+                # 使用预定义按钮选项，未定义则退化为全部整数选项
+                options = criterion_info.get("options", list(range(max_score + 1)))
 
                 st.markdown(
                     f"<div class='score-card'>"
@@ -432,12 +434,15 @@ def render_scoring_page(judge: dict):
                     f"<div class='criterion-range'>📊 评分区间：{score_range}</div>",
                     unsafe_allow_html=True,
                 )
-                scores[criterion_name] = st.number_input(
+                sel = st.radio(
                     label=criterion_name,
-                    min_value=0, max_value=max_score, value=0, step=1,
+                    options=[str(o) for o in options],
+                    index=0,
+                    horizontal=True,
                     key=f"score_{criterion_name}_{submit_round}",
                     label_visibility="collapsed",
                 )
+                scores[criterion_name] = int(sel)
                 st.markdown("</div>", unsafe_allow_html=True)
 
         # 扣分项
