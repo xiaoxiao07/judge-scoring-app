@@ -459,8 +459,12 @@ def render_scoring_page(judge: dict):
                     if count > 0:
                         deductions_applied[ded_name] = count * deduct_val
                 else:
+                    if mode == "score_zero":
+                        label = f"⚠️ {ded_name}（总分归零）"
+                    else:
+                        label = f"{ded_name}（扣 {deduct_val} 分）"
                     checked = st.checkbox(
-                        f"{ded_name}（扣 {deduct_val} 分）",
+                        label,
                         key=f"ded_{ded_name}_{submit_round}",
                         help=desc,
                     )
