@@ -31,7 +31,7 @@ DEFENSE_CRITERIA = {
 
 # 实操组评分标准（总分100分）
 # 依据《仿真操作打分表》和《具身智能精密装配赛题评分细则》，
-# 每个可独立判分的对象均单列一行，裁判只需点选该点允许的分值。
+# 第二、第三部分按评分表小项汇总列出，裁判直接点选该小项得分。
 VOICE_MODULE = "一、语音交互功能实现（12分）"
 TASK_CARD_MODULE = "二、大模型任务卡解析（34分）"
 ASSEMBLY_MODULE = "三、装配流程（24分）"
@@ -66,7 +66,7 @@ def _score_item(max_score, module, options, submodule=None, display_name=None):
 
 
 PRACTICAL_CRITERIA = {
-    # 一、语音交互功能实现（4个独立得分点）
+    # 一、语音交互功能实现（4个得分项）
     "唤醒与基础回应": _score_item(2, VOICE_MODULE, [0, 2]),
     "具备下达指令触发识别任务卡能力": _score_item(
         2, VOICE_MODULE, [0, 2]
@@ -74,79 +74,30 @@ PRACTICAL_CRITERIA = {
     "语音提示任务已完成": _score_item(4, VOICE_MODULE, [0, 4]),
     "语音提示两个任务均已完成": _score_item(4, VOICE_MODULE, [0, 4]),
 
-    # 二、大模型任务卡解析（2张任务卡 + 1个推理过程 + 12个播报点）
-    "任务卡1视觉识别": _score_item(
-        2,
-        TASK_CARD_MODULE,
-        [0, 2],
-        submodule="任务卡视觉识别（2分/张，共2张）",
-        display_name="任务卡1",
-    ),
-    "任务卡2视觉识别": _score_item(
-        2,
-        TASK_CARD_MODULE,
-        [0, 2],
-        submodule="任务卡视觉识别（2分/张，共2张）",
-        display_name="任务卡2",
+    # 二、大模型任务卡解析（4个汇总得分项）
+    "任务卡视觉识别": _score_item(
+        4, TASK_CARD_MODULE, [0, 2, 4]
     ),
     "大模型推理过程展示": _score_item(
-        6,
-        TASK_CARD_MODULE,
-        [0, 6],
-        submodule="大模型推理过程展示（6分）",
+        6, TASK_CARD_MODULE, [0, 6]
     ),
-    **{
-        f"任务卡1场景{index}内容播报": _score_item(
-            2,
-            TASK_CARD_MODULE,
-            [0, 2],
-            submodule="任务卡1内容播报（2分/场景，共6个场景）",
-            display_name=f"场景{index}",
-        )
-        for index in range(1, 7)
-    },
-    **{
-        f"任务卡2顺序{index}内容播报": _score_item(
-            2,
-            TASK_CARD_MODULE,
-            [0, 2],
-            submodule="任务卡2内容播报（2分/顺序，共6个顺序）",
-            display_name=f"顺序{index}",
-        )
-        for index in range(1, 7)
-    },
+    "任务卡1内容播报": _score_item(
+        12, TASK_CARD_MODULE, list(range(0, 13, 2))
+    ),
+    "任务卡2内容播报": _score_item(
+        12, TASK_CARD_MODULE, list(range(0, 13, 2))
+    ),
 
-    # 三、装配流程（12个识别结果 + 6次抓取 + 6次放置）
-    **{
-        f"视觉识别结果{index}": _score_item(
-            1,
-            ASSEMBLY_MODULE,
-            [0, 1],
-            submodule="视觉识别（1分/个，共12个识别结果）",
-            display_name=f"识别结果{index}",
-        )
-        for index in range(1, 13)
-    },
-    **{
-        f"方块{index}抓取正确": _score_item(
-            1,
-            ASSEMBLY_MODULE,
-            [0, 1],
-            submodule="抓取正确（1分/个，共6个方块）",
-            display_name=f"方块{index}",
-        )
-        for index in range(1, 7)
-    },
-    **{
-        f"方块{index}放置正确": _score_item(
-            1,
-            ASSEMBLY_MODULE,
-            [0, 1],
-            submodule="放置正确（1分/个，共6个方块）",
-            display_name=f"方块{index}",
-        )
-        for index in range(1, 7)
-    },
+    # 三、装配流程（3个汇总得分项）
+    "视觉识别结果": _score_item(
+        12, ASSEMBLY_MODULE, list(range(13))
+    ),
+    "抓取正确": _score_item(
+        6, ASSEMBLY_MODULE, list(range(7))
+    ),
+    "放置正确": _score_item(
+        6, ASSEMBLY_MODULE, list(range(7))
+    ),
 
     # 四、装配精度（6个方块分别记录偏移位置）
     **{
@@ -211,12 +162,8 @@ PRACTICAL_DEDUCTIONS = {
     },
 }
 
-TASK_CARD_1_BROADCAST_CRITERIA = tuple(
-    name for name in PRACTICAL_CRITERIA if name.startswith("任务卡1场景")
-)
-TASK_CARD_2_BROADCAST_CRITERIA = tuple(
-    name for name in PRACTICAL_CRITERIA if name.startswith("任务卡2顺序")
-)
+TASK_CARD_1_BROADCAST_CRITERIA = ("任务卡1内容播报",)
+TASK_CARD_2_BROADCAST_CRITERIA = ("任务卡2内容播报",)
 ASSEMBLY_AND_PRECISION_CRITERIA = tuple(
     name
     for name, item in PRACTICAL_CRITERIA.items()
