@@ -13,13 +13,17 @@ https://judge-scoring-app-nusac.streamlit.app/
 - data/ — 评分数据 JSON 文件（通过 GitHub API 自动持久化）
 - .streamlit/secrets.example.toml — GitHub Token 配置模板
 
-## 裁判分组（4组）
-1. 线上实操（70分）— 数字输入 + 用时 + 扣分项 + 否决项
-2. 线下实操（70分）— 选钮点选评分，内容同线上实操
-3. 线上答辩（100分）— 4项：大模型30+视觉30+机器人30+创新10，无扣分
-4. 甘肃线下实操（100分）— 依据具身智能精密装配赛题评分细则，17项评分项
+## 裁判分组（2组）
+1. 答辩组（100分）— 4项：大模型30 + 视觉30 + 机器人30 + 创新10
+   - 每项以表格行展示，列出 0 至满分的全部按钮选项
+   - 无扣分项、无否决项
+2. 实操组（100分）— 依据具身智能精密装配赛题评分细则，共17项
    - 语音交互12分 + 大模型任务卡解析34分 + 装配流程24分 + 装配精度30分
-   - 数字输入 + 用时 + 7项扣分项（含中断次数输入）+ 5项否决项
+   - 表格式按钮评分 + 用时 + 9项手动填写扣分 + 2项否决
+   - 装配精度按钮显示“偏移量 → 得分”，并保留小数得分
+
+旧名称“线上答辩”“甘肃线下实操”仅用于兼容历史登录链接和数据；
+“线上实操”“线下实操”已删除。
 
 ## 管理密码
 zpds2026
@@ -38,8 +42,8 @@ zpds2026
 
 ## Git 推送（网络问题）
 如果连不上 github.com，用代理：
-git config --global http.proxy http://127.0.0.1:7890
-git config --global https.proxy http://127.0.0.1:7890
+git config --global http.proxy http://127.0.0.1:7897
+git config --global https.proxy http://127.0.0.1:7897
 git push
 git config --global --unset http.proxy
 git config --global --unset https.proxy

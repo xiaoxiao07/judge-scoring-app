@@ -4,12 +4,16 @@
 """
 
 import hashlib
+from pathlib import Path
 from typing import Optional
 
 import streamlit as st
 
 from .data_manager import register_judge, find_judge_by_token
-from .scoring import get_groups
+from .scoring import get_groups, normalize_group
+
+
+LOGIN_IMAGE = Path(__file__).resolve().parent.parent / "图片1.png"
 
 
 def _generate_token(name: str, judge_id: str) -> str:
@@ -54,9 +58,6 @@ def login(name: str, judge_id: str, group: str) -> dict:
     st.query_params["judge_id"] = judge_info["judge_id"]
     st.query_params["judge_group"] = judge_info["group"]
 
-    # 标记为手动登录（用于显示书签提示）
-    st.session_state._manual_login = True
-
     return judge_info
 
 
@@ -65,7 +66,14 @@ def logout():
     裁判登出
     清除 session_state 和 URL 参数
     """
-    keys = ["logged_in", "judge_name", "judge_id", "judge_group", "judge_token"]
+    keys = [
+        "logged_in",
+        "judge_name",
+        "judge_id",
+        "judge_group",
+        "judge_token",
+        "_manual_login",
+    ]
     for k in keys:
         if k in st.session_state:
             del st.session_state[k]
@@ -91,11 +99,16 @@ def auto_login_from_token() -> bool:
     if not judge:
         return False
 
+    group = normalize_group(judge.get("group", ""))
+    if group not in get_groups():
+        return False
+
     st.session_state.logged_in = True
     st.session_state.judge_name = judge["name"]
     st.session_state.judge_id = judge["judge_id"]
-    st.session_state.judge_group = judge["group"]
+    st.session_state.judge_group = group
     st.session_state.judge_token = judge["token"]
+    st.query_params["judge_group"] = group
     return True
 
 
@@ -106,7 +119,7 @@ def auto_login_from_params() -> bool:
     """
     name = st.query_params.get("judge_name")
     judge_id = st.query_params.get("judge_id")
-    group = st.query_params.get("judge_group")
+    group = normalize_group(st.query_params.get("judge_group", ""))
     token = st.query_params.get("token", "")
 
     if not all([name, judge_id, group]):
@@ -119,6 +132,7 @@ def auto_login_from_params() -> bool:
     st.session_state.judge_id = judge_id
     st.session_state.judge_group = group
     st.session_state.judge_token = token
+    st.query_params["judge_group"] = group
     return True
 
 
@@ -150,10 +164,7 @@ def render_login_page():
     col1, col2 = st.columns([1, 2])
 
     with col1:
-        st.image(
-            "https://img.icons8.com/fluency/96/judge.png",
-            width=120,
-        )
+        st.image(str(LOGIN_IMAGE), width=140)
 
     with col2:
         st.markdown("### 裁判登录")
@@ -164,8 +175,4 @@ def render_login_page():
         if st.button("✅ 登录", type="primary", use_container_width=True):
             result = login(name, judge_id, group)
             if result:
-                st.success(f"欢迎，{result['name']} 裁判！")
                 st.rerun()
-
-    st.markdown("---")
-    st.caption("💡 首次登录后，再次访问此链接将自动进入评分页，无需重复登录。")

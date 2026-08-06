@@ -144,6 +144,34 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
+st.markdown(
+    """
+    <style>
+    /* 当前评分页：紧凑的表格式行 */
+    .score-row-name {
+        min-height: 48px;
+        display: flex;
+        align-items: center;
+        font-size: 17px;
+        font-weight: 700;
+        line-height: 1.35;
+        color: #1a1a1a !important;
+    }
+    div[data-testid="stVerticalBlockBorderWrapper"]:has(.score-row-name) {
+        border: 1px solid #cfd6e4 !important;
+        border-radius: 4px !important;
+        margin-bottom: -1px !important;
+        background: #FFFFFF !important;
+    }
+    div[data-testid="stHorizontalBlock"]:has(.score-row-name) {
+        align-items: center !important;
+        flex-wrap: nowrap !important;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
 # ===================== 页面路由 =====================
 
 
@@ -178,15 +206,6 @@ def main():
         if st.button("🔄 切换", help="切换裁判账号"):
             logout()
 
-    # --- 手动登录后显示书签提示 ---
-    if st.session_state.pop("_manual_login", False):
-        st.info(
-            "🔖 **登录成功！**\n\n"
-            "请在手机浏览器中**将此页面添加到书签**，下次直接打开书签即可进入评分页，无需再次输入信息。\n\n"
-            "👉 在 Safari/Chrome 中点击分享按钮 → **添加到主屏幕** 使用更方便",
-            icon="📌",
-        )
-
     st.markdown("---")
 
     # --- 页面 Tab ---
@@ -208,6 +227,52 @@ def main():
 # ===================== 评分页面 =====================
 
 
+def _render_score_buttons(
+    criterion_name: str,
+    criterion_info: dict,
+    submit_round: int,
+):
+    """渲染评分按钮，并返回按钮对应的实际分值。"""
+    max_score = criterion_info["max"]
+    options = criterion_info.get("options", list(range(max_score + 1)))
+    widget_key = f"score_{criterion_name}_{submit_round}"
+
+    if options and isinstance(options[0], dict):
+        option_labels = [option["label"] for option in options]
+        label_to_value = {
+            option["label"]: option["value"] for option in options
+        }
+        zero_index = next(
+            (
+                index
+                for index, option in enumerate(options)
+                if option["value"] == 0
+            ),
+            0,
+        )
+        selected_label = st.radio(
+            label=criterion_name,
+            options=option_labels,
+            index=zero_index,
+            horizontal=True,
+            key=widget_key,
+            label_visibility="collapsed",
+        )
+        return label_to_value[selected_label]
+
+    option_values = list(options)
+    zero_index = option_values.index(0) if 0 in option_values else 0
+    return st.radio(
+        label=criterion_name,
+        options=option_values,
+        index=zero_index,
+        format_func=lambda value: f"{value:g}分",
+        horizontal=True,
+        key=widget_key,
+        label_visibility="collapsed",
+    )
+
+
 def render_scoring_page(judge: dict):
     """渲染评分表单"""
     group = judge["group"]
@@ -217,7 +282,6 @@ def render_scoring_page(judge: dict):
     veto_def = get_veto(group)
 
     st.markdown(f"### 📝 {group}评分")
-    st.caption("请为参赛选手的每个评分项打分")
 
     # 提交计数器：每次提交后 +1，使输入框重新从 0 开始
     if "submit_round" not in st.session_state:
@@ -231,9 +295,9 @@ def render_scoring_page(judge: dict):
         key=f"contestant_id_{submit_round}",
     )
 
-    # === 线上实操/线下实操：用时输入 ===
+    # 实操组记录用时
     duration = ""
-    if group in ("线上实操", "线下实操", "甘肃线下实操"):
+    if group == "实操组":
         col_t1, col_t2 = st.columns([1, 2])
         with col_t1:
             st.markdown("**⏱ 用时**")
@@ -244,248 +308,67 @@ def render_scoring_page(judge: dict):
                 key=f"duration_{submit_round}",
                 label_visibility="collapsed",
             )
-        st.caption("记录选手演示/装配实际耗时，总分相同时用时短者排名靠前")
 
     # 评分项
     scores = {}
     st.markdown("#### 评分项")
 
-    if group == "线上实操":
-        # 线上实操：数字输入 + 内联扣分
+    if group == "实操组":
+        # 实操组：表格式选钮评分 + 扣分项 + 否决项
         modules = {}
         for name, info in criteria.items():
             module = info.get("module", "其他")
             modules.setdefault(module, []).append((name, info))
 
-        inline_ded_keys = set()
-        for info in criteria.values():
-            if info.get("deduction_key"):
-                inline_ded_keys.add(info["deduction_key"])
         deductions_applied = {}
 
         for module_name, items in modules.items():
             st.markdown(f"<div class='module-title'>{module_name}</div>", unsafe_allow_html=True)
             for criterion_name, criterion_info in items:
-                max_score = criterion_info["max"]
-                desc = criterion_info["description"]
-                score_range = criterion_info.get("score_range", f"0~{max_score}分")
-                ded_key = criterion_info.get("deduction_key")
-
-                st.markdown(
-                    f"<div class='score-card'>"
-                    f"<div class='criterion-name'>{criterion_name}</div>"
-                    f"<div class='criterion-desc'>{desc}</div>"
-                    f"<div class='criterion-range'>📊 评分区间：{score_range}</div>",
-                    unsafe_allow_html=True,
-                )
-                scores[criterion_name] = st.number_input(
-                    label=criterion_name,
-                    min_value=0, max_value=max_score, value=0, step=1,
-                    key=f"score_{criterion_name}_{submit_round}",
-                    label_visibility="collapsed",
-                )
-                if ded_key and ded_key in deductions_def:
-                    ded_info = deductions_def[ded_key]
-                    deduct_val = ded_info["deduct"]
-                    ded_desc = ded_info["description"]
-                    st.markdown(
-                        f"<div style='font-size:13px;color:#c0392b;font-weight:600;margin:6px 0 2px 0;'>⛔ 扣分：{ded_key}</div>",
-                        unsafe_allow_html=True,
-                    )
-                    st.caption(ded_desc)
-                    if deduct_val == "half":
-                        bad_steps = st.number_input(
-                            label=f"问题步数-{ded_key}",
-                            min_value=0, max_value=6, value=0, step=1,
-                            key=f"ded_steps_{ded_key}_{submit_round}",
+                with st.container(border=True):
+                    name_col, score_col = st.columns([2, 5])
+                    with name_col:
+                        st.markdown(
+                            f"<div class='score-row-name'>{criterion_name}</div>",
+                            unsafe_allow_html=True,
                         )
-                        if bad_steps > 0:
-                            deductions_applied[ded_key] = bad_steps * 1
-                st.markdown("</div>", unsafe_allow_html=True)
-
-        # 未内联的扣分项
-        remaining_ded = {k: v for k, v in deductions_def.items() if k not in inline_ded_keys}
-        if remaining_ded:
-            st.markdown("---")
-            st.markdown("#### ⚠️ 其他扣分项")
-            st.caption("如存在以下情况，勾选对应扣分项")
-            for ded_name, ded_info in remaining_ded.items():
-                deduct_val = ded_info["deduct"]
-                desc = ded_info["description"]
-                checked = st.checkbox(
-                    f"{ded_name}（扣 {deduct_val} 分）",
-                    key=f"ded_{ded_name}_{submit_round}",
-                    help=desc,
-                )
-                if checked:
-                    deductions_applied[ded_name] = deduct_val
-        deduction_total = sum(deductions_applied.values())
-        if deduction_total > 0:
-            st.warning(f"扣分合计：{deduction_total} 分")
-
-    elif group == "线下实操":
-        # 线下实操：选钮评分 + 选钮扣步骤分
-        modules = {}
-        for name, info in criteria.items():
-            module = info.get("module", "其他")
-            modules.setdefault(module, []).append((name, info))
-
-        inline_ded_keys = set()
-        for info in criteria.values():
-            if info.get("deduction_key"):
-                inline_ded_keys.add(info["deduction_key"])
-        deductions_applied = {}
-
-        for module_name, items in modules.items():
-            st.markdown(f"<div class='module-title'>{module_name}</div>", unsafe_allow_html=True)
-            for criterion_name, criterion_info in items:
-                max_score = criterion_info["max"]
-                desc = criterion_info["description"]
-                score_range = criterion_info.get("score_range", f"0~{max_score}分")
-                ded_key = criterion_info.get("deduction_key")
-
-                st.markdown(
-                    f"<div class='score-card'>"
-                    f"<div class='criterion-name'>{criterion_name}</div>"
-                    f"<div class='criterion-desc'>{desc}</div>"
-                    f"<div class='criterion-range'>📊 评分区间：{score_range}</div>",
-                    unsafe_allow_html=True,
-                )
-                # 选钮评分
-                opts = [str(i) for i in range(max_score + 1)]
-                sel = st.radio(
-                    label=criterion_name,
-                    options=opts,
-                    index=0,
-                    horizontal=True,
-                    key=f"score_{criterion_name}_{submit_round}",
-                    label_visibility="collapsed",
-                )
-                scores[criterion_name] = int(sel)
-
-                # 内联扣分（选钮）
-                if ded_key and ded_key in deductions_def:
-                    ded_info = deductions_def[ded_key]
-                    deduct_val = ded_info["deduct"]
-                    ded_desc = ded_info["description"]
-                    st.markdown(
-                        f"<div style='font-size:13px;color:#c0392b;font-weight:600;margin:6px 0 2px 0;'>⛔ 扣分：{ded_key}</div>",
-                        unsafe_allow_html=True,
-                    )
-                    st.caption(ded_desc)
-                    if deduct_val == "half":
-                        step_opts = [str(i) for i in range(7)]
-                        bad_steps_str = st.radio(
-                            label=f"问题步数-{ded_key}",
-                            options=step_opts,
-                            index=0,
-                            horizontal=True,
-                            key=f"ded_steps_{ded_key}_{submit_round}",
-                            label_visibility="visible",
+                    with score_col:
+                        scores[criterion_name] = _render_score_buttons(
+                            criterion_name,
+                            criterion_info,
+                            submit_round,
                         )
-                        bad_steps = int(bad_steps_str)
-                        if bad_steps > 0:
-                            deductions_applied[ded_key] = bad_steps * 1
-
-                st.markdown("</div>", unsafe_allow_html=True)
-
-        # 未内联的扣分项
-        remaining_ded = {k: v for k, v in deductions_def.items() if k not in inline_ded_keys}
-        if remaining_ded:
-            st.markdown("---")
-            st.markdown("#### ⚠️ 其他扣分项")
-            st.caption("如存在以下情况，勾选对应扣分项")
-            for ded_name, ded_info in remaining_ded.items():
-                deduct_val = ded_info["deduct"]
-                desc = ded_info["description"]
-                checked = st.checkbox(
-                    f"{ded_name}（扣 {deduct_val} 分）",
-                    key=f"ded_{ded_name}_{submit_round}",
-                    help=desc,
-                )
-                if checked:
-                    deductions_applied[ded_name] = deduct_val
-        deduction_total = sum(deductions_applied.values())
-        if deduction_total > 0:
-            st.warning(f"扣分合计：{deduction_total} 分")
-
-    elif group == "甘肃线下实操":
-        # 甘肃线下实操：选钮评分 + 扣分项 + 否决项
-        modules = {}
-        for name, info in criteria.items():
-            module = info.get("module", "其他")
-            modules.setdefault(module, []).append((name, info))
-
-        deductions_applied = {}
-
-        for module_name, items in modules.items():
-            st.markdown(f"<div class='module-title'>{module_name}</div>", unsafe_allow_html=True)
-            for criterion_name, criterion_info in items:
-                max_score = criterion_info["max"]
-                desc = criterion_info["description"]
-                score_range = criterion_info.get("score_range", f"0~{max_score}分")
-                # 使用预定义按钮选项，未定义则退化为全部整数选项
-                options = criterion_info.get("options", list(range(max_score + 1)))
-
-                st.markdown(
-                    f"<div class='score-card'>"
-                    f"<div class='criterion-name'>{criterion_name}</div>"
-                    f"<div class='criterion-desc'>{desc}</div>"
-                    f"<div class='criterion-range'>📊 评分区间：{score_range}</div>",
-                    unsafe_allow_html=True,
-                )
-                # 支持两种选项格式：简单列表 [0,2,4] 或 label-value 字典列表
-                if options and isinstance(options[0], dict):
-                    option_labels = [o["label"] for o in options]
-                    label_to_value = {o["label"]: o["value"] for o in options}
-                    sel = st.radio(
-                        label=criterion_name,
-                        options=option_labels,
-                        index=0,
-                        horizontal=True,
-                        key=f"score_{criterion_name}_{submit_round}",
-                        label_visibility="collapsed",
-                    )
-                    scores[criterion_name] = label_to_value[sel]
-                else:
-                    sel = st.radio(
-                        label=criterion_name,
-                        options=[str(o) for o in options],
-                        index=0,
-                        horizontal=True,
-                        key=f"score_{criterion_name}_{submit_round}",
-                        label_visibility="collapsed",
-                    )
-                    scores[criterion_name] = int(sel)
-                st.markdown("</div>", unsafe_allow_html=True)
 
         # 扣分项 — 直接填写扣分分值
         if deductions_def:
             st.markdown("---")
             st.markdown("#### ⚠️ 扣分项")
-            st.caption("如存在以下情况，直接填写扣分分值（0表示无扣分）")
             for ded_name, ded_info in deductions_def.items():
                 deduct_val = ded_info["deduct"]
-                desc = ded_info["description"]
                 mode = ded_info.get("mode", "checkbox")
                 if mode in ("per_step", "score_zero"):
                     max_deduct = 100
-                    if mode == "score_zero":
-                        help_text = f"{desc}（标准：总分归零）"
-                    else:
-                        help_text = f"{desc}（标准：每次扣 {deduct_val} 分）"
                 elif deduct_val <= 5:
                     max_deduct = 50
-                    help_text = f"{desc}（标准：扣 {deduct_val} 分）"
                 else:
                     max_deduct = deduct_val
-                    help_text = f"{desc}（标准：扣 {deduct_val} 分）"
-                score = st.number_input(
-                    label=f"{ded_name}",
-                    min_value=0, max_value=max_deduct, value=0, step=1,
-                    key=f"ded_{ded_name}_{submit_round}",
-                    help=help_text,
-                )
+                with st.container(border=True):
+                    name_col, value_col = st.columns([3, 2])
+                    with name_col:
+                        st.markdown(
+                            f"<div class='score-row-name'>{ded_name}</div>",
+                            unsafe_allow_html=True,
+                        )
+                    with value_col:
+                        score = st.number_input(
+                            label=ded_name,
+                            min_value=0,
+                            max_value=max_deduct,
+                            value=0,
+                            step=1,
+                            key=f"ded_{ded_name}_{submit_round}",
+                            label_visibility="collapsed",
+                        )
                 if score > 0:
                     deductions_applied[ded_name] = score
             deduction_total = sum(deductions_applied.values())
@@ -493,47 +376,41 @@ def render_scoring_page(judge: dict):
                 st.warning(f"扣分合计：{deduction_total} 分")
 
     else:
-        # 其他组直接显示（答辩组、实操组、线上答辩）
+        # 答辩组：表格式按钮评分，列出 0 至满分的全部分值
+        st.markdown(
+            "<div class='module-title'>答辩评分（100分）</div>",
+            unsafe_allow_html=True,
+        )
         for criterion_name, criterion_info in criteria.items():
-            max_score = criterion_info["max"]
-            desc = criterion_info["description"]
-            score_range = criterion_info.get("score_range", f"满分 {max_score} 分")
-            st.markdown(
-                f"<div class='score-card'>"
-                f"<div class='criterion-name'>{criterion_name}</div>"
-                f"<div class='criterion-desc'>{desc}</div>"
-                f"<div class='criterion-range'>📊 评分区间：{score_range}</div>",
-                unsafe_allow_html=True,
-            )
-            scores[criterion_name] = st.number_input(
-                label=criterion_name,
-                min_value=0,
-                max_value=max_score,
-                value=0,
-                step=1,
-                key=f"score_{criterion_name}_{submit_round}",
-                label_visibility="collapsed",
-            )
-            st.markdown("</div>", unsafe_allow_html=True)
+            with st.container(border=True):
+                name_col, score_col = st.columns([2, 5])
+                with name_col:
+                    st.markdown(
+                        f"<div class='score-row-name'>{criterion_name}</div>",
+                        unsafe_allow_html=True,
+                    )
+                with score_col:
+                    scores[criterion_name] = _render_score_buttons(
+                        criterion_name,
+                        criterion_info,
+                        submit_round,
+                    )
 
-    # === 通用扣分项（答辩组/实操组/线上答辩没有） ===
-    if group not in ("线上实操", "线下实操", "甘肃线下实操"):
+    # 答辩组没有扣分项
+    if group == "答辩组":
         deductions_applied = {}
         deduction_total = 0
 
     # === 否决项（勾选后总分归零） ===
     veto_triggered = False
     if veto_def:
-        st.caption("如触发以下任何否决项，选手总分直接计 0 分，请谨慎勾选")
-        for veto_name, veto_info in veto_def.items():
+        for veto_name in veto_def:
             checked = st.checkbox(
                 f"🚨 **{veto_name}**",
                 key=f"veto_{veto_name}_{submit_round}",
-                help=veto_info["description"],
             )
             if checked:
                 veto_triggered = True
-                st.error(f"⚠️ 已触发否决项：{veto_info['description']}")
 
     # 实时总分（含扣分和否决项）
     raw_total = sum(scores.values())

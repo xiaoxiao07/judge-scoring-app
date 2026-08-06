@@ -13,7 +13,7 @@ from typing import Optional
 import openpyxl
 from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 
-from .scoring import get_criteria, get_total_score, get_groups
+from .scoring import get_criteria, get_total_score, get_groups, normalize_group
 
 # 数据目录
 DATA_DIR = Path(__file__).parent.parent / "data"
@@ -21,12 +21,10 @@ DATA_DIR = Path(__file__).parent.parent / "data"
 # 裁判信息文件
 JUDGES_FILE = DATA_DIR / "judges.json"
 
-# 评分记录文件（每组一个文件）
+# 评分记录文件（沿用原文件名，保留已有评分数据）
 SCORE_FILES = {
-    "线上实操": DATA_DIR / "scores_线上赛.json",
-    "线下实操": DATA_DIR / "scores_线下实操.json",
-    "线上答辩": DATA_DIR / "scores_线上答辩.json",
-    "甘肃线下实操": DATA_DIR / "scores_甘肃线下实操.json",
+    "答辩组": DATA_DIR / "scores_线上答辩.json",
+    "实操组": DATA_DIR / "scores_甘肃线下实操.json",
 }
 
 # GitHub 仓库信息（公开仓库，读不需要 token）
@@ -243,7 +241,7 @@ def save_score(
     contestant_id: str,
     scores: dict,
     deductions: Optional[dict] = None,
-    final_score: Optional[int] = None,
+    final_score: Optional[float] = None,
     veto_triggered: bool = False,
     veto_items: Optional[list] = None,
     duration: Optional[str] = None,
@@ -252,7 +250,7 @@ def save_score(
     保存一条评分记录
     返回保存的记录字典
     """
-    group = judge_info["group"]
+    group = normalize_group(judge_info["group"])
     file_path = SCORE_FILES.get(group)
     if not file_path:
         raise ValueError(f"未知的裁判组: {group}")
@@ -267,7 +265,11 @@ def save_score(
         "judge_id": judge_info["judge_id"],
         "judge_group": group,
         "contestant_id": contestant_id,
-        "scores": {k: int(v) for k, v in scores.items()},
+        # 保留装配精度中的 4.9、4.7、0.5 等小数分值。
+        "scores": {
+            k: int(v) if isinstance(v, float) and v.is_integer() else v
+            for k, v in scores.items()
+        },
         "total_score": final_score if final_score is not None else score_total,
         "raw_score": score_total,
         "total_max": total_max,
@@ -293,7 +295,7 @@ def save_score(
 
 def get_all_scores(group: str) -> list:
     """获取某组的所有评分记录"""
-    file_path = SCORE_FILES.get(group)
+    file_path = SCORE_FILES.get(normalize_group(group))
     if not file_path:
         return []
     return _read_json(file_path)
