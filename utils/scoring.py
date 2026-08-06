@@ -162,47 +162,99 @@ PRACTICAL_CRITERIA = {
 }
 
 # 实操组扣分项（依据具身智能精密装配赛题打分表）
+# per_count：输入发生次数并按 deduct 自动计算；其余模式使用按钮选择。
 PRACTICAL_DEDUCTIONS = {
     "使用文本输入功能": {
         "deduct": 3,
-        "description": "使用文本输入功能进行交互，每条指令扣3分",
+        "mode": "per_count",
+        "description": "每条文本输入指令扣3分",
     },
     "碰撞扣分": {
         "deduct": 1,
-        "description": "物料方块抓取与放置过程中发生碰撞刮碰，每次扣1分，每次装配最多扣1分",
+        "mode": "per_count",
+        "description": "每次碰撞扣1分，每个装配流程最多扣1分",
     },
     "人为辅助机器人/智能体识别": {
-        "deduct": 34,
-        "description": "参赛选手通过人为介入方式辅助机器人或智能体实现识别，该任务卡对应任务计0分",
+        "deduct": 0,
+        "mode": "task_card_override",
+        "description": "选择被人为辅助识别的任务卡，并自动清零对应得分",
     },
     "二次调整": {
         "deduct": 5,
-        "description": "物料方块放置后仍通过程序控制机器人调整位置，或后续装配动作中改变已装配方块位置，每次扣除5分",
+        "mode": "per_count",
+        "description": "每次二次调整扣5分",
     },
     "人为介入装配环节": {
-        "deduct": 54,
-        "description": "通过人为介入方式移动托盘或物料方块位置，装配流程(24分)与装配精度(30分)得分记为0分",
+        "deduct": 0,
+        "mode": "assembly_override",
+        "description": "选择介入后，装配流程和装配精度均记0分",
     },
     "中断": {
         "deduct": 5,
-        "mode": "per_step",
-        "description": "操作过程中由于自身原因导致装配中断（不含碰撞），每次扣5分，扣完为止",
+        "mode": "per_count",
+        "description": "每次中断扣5分，扣完为止",
     },
     "示教": {
         "deduct": 50,
-        "description": "未使用相机，仅采用示教方式安装零件，扣50分",
+        "mode": "binary_deduct",
+        "description": "使用示教方式扣50分",
     },
     "使用非指定方式输入指令": {
-        "deduct": 100,
+        "deduct": 0,
         "mode": "score_zero",
-        "description": "使用按键、触摸屏、串口等非指定方式输入指令，总分计0分",
+        "description": "选择后总分记0分",
     },
     "误删系统文件": {
-        "deduct": 100,
+        "deduct": 0,
         "mode": "score_zero",
-        "description": "调试期间误删机器人系统文件导致系统崩溃，总分计0分",
+        "description": "选择后总分记0分",
     },
 }
+
+TASK_CARD_1_BROADCAST_CRITERIA = tuple(
+    name for name in PRACTICAL_CRITERIA if name.startswith("任务卡1场景")
+)
+TASK_CARD_2_BROADCAST_CRITERIA = tuple(
+    name for name in PRACTICAL_CRITERIA if name.startswith("任务卡2顺序")
+)
+ASSEMBLY_AND_PRECISION_CRITERIA = tuple(
+    name
+    for name, item in PRACTICAL_CRITERIA.items()
+    if item["module"] in (ASSEMBLY_MODULE, PRECISION_MODULE)
+)
+
+
+def apply_practical_score_overrides(
+    scores: dict,
+    auxiliary_task_card: str = "",
+    assembly_intervened: bool = False,
+) -> tuple[dict, list]:
+    """应用任务卡辅助识别和人为介入装配对应的强制归零规则。"""
+    adjusted_scores = dict(scores)
+    override_notes = []
+
+    def zero_scores(criteria_names, note):
+        for criterion_name in criteria_names:
+            adjusted_scores[criterion_name] = 0
+        if note not in override_notes:
+            override_notes.append(note)
+
+    if auxiliary_task_card == "任务卡1":
+        zero_scores(TASK_CARD_1_BROADCAST_CRITERIA, "任务卡1内容播报")
+    elif auxiliary_task_card == "任务卡2":
+        zero_scores(TASK_CARD_2_BROADCAST_CRITERIA, "任务卡2内容播报")
+        zero_scores(
+            ASSEMBLY_AND_PRECISION_CRITERIA,
+            "第三部分装配流程与第四部分装配精度（任务卡2辅助识别）",
+        )
+
+    if assembly_intervened:
+        zero_scores(
+            ASSEMBLY_AND_PRECISION_CRITERIA,
+            "第三部分装配流程与第四部分装配精度（人为介入）",
+        )
+
+    return adjusted_scores, override_notes
 
 # 实操组否决项（勾选后总分归零）
 PRACTICAL_VETO = {

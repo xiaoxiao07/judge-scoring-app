@@ -18,7 +18,14 @@ from utils.auth import (
     render_login_page,
     logout,
 )
-from utils.scoring import get_criteria, get_total_score, get_groups, get_deductions, get_veto
+from utils.scoring import (
+    apply_practical_score_overrides,
+    get_criteria,
+    get_deductions,
+    get_groups,
+    get_total_score,
+    get_veto,
+)
 from utils.data_manager import (
     init_data_files,
     save_score,
@@ -323,6 +330,10 @@ def render_scoring_page(judge: dict):
 
     # 评分项
     scores = {}
+    deductions_applied = {}
+    deduction_total = 0
+    score_zero_items = []
+    score_override_notes = []
     st.markdown("#### 评分项")
 
     if group == "实操组":
@@ -331,8 +342,6 @@ def render_scoring_page(judge: dict):
         for name, info in criteria.items():
             module = info.get("module", "其他")
             modules.setdefault(module, []).append((name, info))
-
-        deductions_applied = {}
 
         for module_name, items in modules.items():
             st.markdown(
@@ -364,39 +373,138 @@ def render_scoring_page(judge: dict):
                             submit_round,
                         )
 
-        # 扣分项 — 直接填写扣分分值
+        # 扣分项：次数类自动乘以单次扣分，规则类使用按钮选择
+        auxiliary_task_card = ""
+        assembly_intervened = False
+
         if deductions_def:
             st.markdown("---")
             st.markdown("#### ⚠️ 扣分项")
             for ded_name, ded_info in deductions_def.items():
                 deduct_val = ded_info["deduct"]
-                mode = ded_info.get("mode", "checkbox")
-                if mode in ("per_step", "score_zero"):
-                    max_deduct = 100
-                elif deduct_val <= 5:
-                    max_deduct = 50
-                else:
-                    max_deduct = deduct_val
-                with st.container(border=True):
-                    name_col, value_col = st.columns([3, 2])
-                    with name_col:
-                        st.markdown(
-                            f"<div class='score-row-name'>{ded_name}</div>",
-                            unsafe_allow_html=True,
-                        )
-                    with value_col:
-                        score = st.number_input(
-                            label=ded_name,
-                            min_value=0,
-                            max_value=max_deduct,
-                            value=0,
-                            step=1,
-                            key=f"ded_{ded_name}_{submit_round}",
-                            label_visibility="collapsed",
-                        )
-                if score > 0:
-                    deductions_applied[ded_name] = score
-            deduction_total = sum(deductions_applied.values())
+                mode = ded_info.get("mode", "per_count")
+
+                if mode == "per_count":
+                    with st.container(border=True):
+                        name_col, count_col, total_col = st.columns([3, 2, 2])
+                        with name_col:
+                            st.markdown(
+                                f"<div class='score-row-name'>{ded_name}（次数）</div>",
+                                unsafe_allow_html=True,
+                            )
+                        with count_col:
+                            count = st.number_input(
+                                label=f"{ded_name}次数",
+                                min_value=0,
+                                max_value=100,
+                                value=0,
+                                step=1,
+                                key=f"ded_count_{ded_name}_{submit_round}",
+                                label_visibility="collapsed",
+                            )
+                        with total_col:
+                            penalty = count * deduct_val
+                            st.markdown(
+                                f"<div class='score-row-name'>扣 {penalty} 分</div>",
+                                unsafe_allow_html=True,
+                            )
+                    if count > 0:
+                        deductions_applied[ded_name] = penalty
+
+                elif mode == "task_card_override":
+                    with st.container(border=True):
+                        name_col, value_col = st.columns([3, 4])
+                        with name_col:
+                            st.markdown(
+                                f"<div class='score-row-name'>{ded_name}</div>",
+                                unsafe_allow_html=True,
+                            )
+                        with value_col:
+                            auxiliary_task_card = st.radio(
+                                label=ded_name,
+                                options=["未发生", "任务卡1", "任务卡2"],
+                                index=0,
+                                horizontal=True,
+                                key=f"ded_choice_{ded_name}_{submit_round}",
+                                label_visibility="collapsed",
+                            )
+                    if auxiliary_task_card != "未发生":
+                        deductions_applied[ded_name] = auxiliary_task_card
+
+                elif mode == "assembly_override":
+                    with st.container(border=True):
+                        name_col, value_col = st.columns([3, 4])
+                        with name_col:
+                            st.markdown(
+                                f"<div class='score-row-name'>{ded_name}</div>",
+                                unsafe_allow_html=True,
+                            )
+                        with value_col:
+                            assembly_choice = st.radio(
+                                label=ded_name,
+                                options=["未介入", "介入"],
+                                index=0,
+                                horizontal=True,
+                                key=f"ded_choice_{ded_name}_{submit_round}",
+                                label_visibility="collapsed",
+                            )
+                    assembly_intervened = assembly_choice == "介入"
+                    if assembly_intervened:
+                        deductions_applied[ded_name] = "介入"
+
+                elif mode == "binary_deduct":
+                    with st.container(border=True):
+                        name_col, value_col = st.columns([3, 4])
+                        with name_col:
+                            st.markdown(
+                                f"<div class='score-row-name'>{ded_name}</div>",
+                                unsafe_allow_html=True,
+                            )
+                        with value_col:
+                            binary_choice = st.radio(
+                                label=ded_name,
+                                options=["未使用", f"使用（扣{deduct_val}分）"],
+                                index=0,
+                                horizontal=True,
+                                key=f"ded_choice_{ded_name}_{submit_round}",
+                                label_visibility="collapsed",
+                            )
+                    if binary_choice != "未使用":
+                        deductions_applied[ded_name] = deduct_val
+
+                elif mode == "score_zero":
+                    with st.container(border=True):
+                        name_col, value_col = st.columns([3, 4])
+                        with name_col:
+                            st.markdown(
+                                f"<div class='score-row-name'>{ded_name}</div>",
+                                unsafe_allow_html=True,
+                            )
+                        with value_col:
+                            zero_choice = st.radio(
+                                label=ded_name,
+                                options=["否", "是（总分记0分）"],
+                                index=0,
+                                horizontal=True,
+                                key=f"ded_choice_{ded_name}_{submit_round}",
+                                label_visibility="collapsed",
+                            )
+                    if zero_choice != "否":
+                        deductions_applied[ded_name] = "总分记0分"
+                        score_zero_items.append(ded_name)
+
+            scores, score_override_notes = apply_practical_score_overrides(
+                scores,
+                auxiliary_task_card=auxiliary_task_card,
+                assembly_intervened=assembly_intervened,
+            )
+            deduction_total = sum(
+                value
+                for value in deductions_applied.values()
+                if isinstance(value, (int, float))
+            )
+            if score_override_notes:
+                st.warning("自动归零：" + "；".join(score_override_notes))
             if deduction_total > 0:
                 st.warning(f"扣分合计：{deduction_total} 分")
 
@@ -427,7 +535,7 @@ def render_scoring_page(judge: dict):
         deduction_total = 0
 
     # === 否决项（勾选后总分归零） ===
-    veto_triggered = False
+    veto_triggered_items = []
     if veto_def:
         for veto_name in veto_def:
             checked = st.checkbox(
@@ -435,28 +543,33 @@ def render_scoring_page(judge: dict):
                 key=f"veto_{veto_name}_{submit_round}",
             )
             if checked:
-                veto_triggered = True
+                veto_triggered_items.append(veto_name)
 
-    # 实时总分（含扣分和否决项）
+    veto_triggered = bool(veto_triggered_items)
+    score_zero_triggered = bool(score_zero_items)
+
+    # 实时总分（已应用强制归零、扣分和总分归零规则）
     raw_total = sum(scores.values())
-    if veto_triggered:
+    if veto_triggered or score_zero_triggered:
         final_total = 0
     else:
         final_total = max(0, raw_total - deduction_total)
 
-    if veto_triggered:
+    if veto_triggered or score_zero_triggered:
+        zero_reasons = veto_triggered_items + score_zero_items
+        reason_text = "、".join(zero_reasons)
         st.markdown(
             f"<div style='background:#f8d7da;border:2px solid #dc3545;border-radius:15px;padding:20px;text-align:center;margin:15px 0;'>"
-            f"<div style='font-size:18px;font-weight:bold;color:#dc3545;'>🚫 否决项已触发</div>"
+            f"<div style='font-size:18px;font-weight:bold;color:#dc3545;'>🚫 总分归零项已触发</div>"
             f"<div style='font-size:36px;font-weight:bold;color:#dc3545;margin:10px 0;'>0 / {total_max}</div>"
-            f"<div style='font-size:14px;color:#666;'>选手演示环节总分计 0 分</div>"
+            f"<div style='font-size:14px;color:#666;'>{reason_text}</div>"
             f"</div>",
             unsafe_allow_html=True,
         )
     elif deductions_def:
         st.markdown(
             f"<div class='total-score-box'>"
-            f"<div class='score-label'>原始总分</div>"
+            f"<div class='score-label'>得分项合计</div>"
             f"<div class='score-value'>{raw_total} / {total_max}</div>"
             f"</div>",
             unsafe_allow_html=True,
@@ -494,12 +607,6 @@ def render_scoring_page(judge: dict):
         elif group == "实操组" and not duration.strip():
             st.error("请输入完成时间 T")
         else:
-            # 收集触发的否决项
-            veto_triggered_items = []
-            if veto_def:
-                for veto_name in veto_def:
-                    if st.session_state.get(f"veto_{veto_name}_{submit_round}", False):
-                        veto_triggered_items.append(veto_name)
             record = save_score(
                 judge,
                 contestant_id.strip(),
@@ -508,6 +615,9 @@ def render_scoring_page(judge: dict):
                 final_score=final_total,
                 veto_triggered=veto_triggered,
                 veto_items=veto_triggered_items if veto_triggered_items else None,
+                score_zero_triggered=score_zero_triggered,
+                score_zero_items=score_zero_items if score_zero_items else None,
+                score_overrides=score_override_notes if score_override_notes else None,
                 duration=duration.strip() if group == "实操组" else None,
             )
             st.success(

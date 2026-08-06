@@ -244,6 +244,9 @@ def save_score(
     final_score: Optional[float] = None,
     veto_triggered: bool = False,
     veto_items: Optional[list] = None,
+    score_zero_triggered: bool = False,
+    score_zero_items: Optional[list] = None,
+    score_overrides: Optional[list] = None,
     duration: Optional[str] = None,
 ) -> dict:
     """
@@ -285,6 +288,11 @@ def save_score(
     if veto_triggered:
         record["veto_triggered"] = True
         record["veto_items"] = veto_items or []
+    if score_zero_triggered:
+        record["score_zero_triggered"] = True
+        record["score_zero_items"] = score_zero_items or []
+    if score_overrides:
+        record["score_overrides"] = score_overrides
 
     records.append(record)
     _write_json(file_path, records)
