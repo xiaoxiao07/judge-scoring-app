@@ -8,6 +8,10 @@
 部署方式：Streamlit Community Cloud
 """
 
+import hashlib
+import json
+import uuid
+
 import streamlit as st
 
 from utils.auth import (
@@ -27,6 +31,7 @@ from utils.scoring import (
     get_veto,
 )
 from utils.data_manager import (
+    ScorePersistenceError,
     init_data_files,
     save_score,
     get_all_scores,
@@ -422,7 +427,7 @@ def render_scoring_page(judge: dict):
                         with value_col:
                             auxiliary_task_card = st.radio(
                                 label=ded_name,
-                                options=["未发生", "任务卡1", "任务卡2"],
+                                options=["未发生", "任务卡1", "任务卡2", "任务卡1及任务卡2"],
                                 index=0,
                                 horizontal=True,
                                 key=f"ded_choice_{ded_name}_{submit_round}",
@@ -607,25 +612,62 @@ def render_scoring_page(judge: dict):
         elif group == "实操组" and not duration.strip():
             st.error("请输入完成时间 T")
         else:
-            record = save_score(
-                judge,
-                contestant_id.strip(),
-                scores,
-                deductions=deductions_applied if deductions_applied else None,
-                final_score=final_total,
-                veto_triggered=veto_triggered,
-                veto_items=veto_triggered_items if veto_triggered_items else None,
-                score_zero_triggered=score_zero_triggered,
-                score_zero_items=score_zero_items if score_zero_items else None,
-                score_overrides=score_override_notes if score_override_notes else None,
-                duration=duration.strip() if group == "实操组" else None,
-            )
-            st.success(
-                f"✅ {judge['name']} 裁判 → 选手 {record['contestant_id']} "
-                f"得分 {record['total_score']}/{record['total_max']}，已记录！"
-            )
-            st.session_state.submit_round += 1
-            st.rerun()
+            submission_payload = {
+                "judge_id": judge["judge_id"],
+                "judge_group": group,
+                "contestant_id": contestant_id.strip(),
+                "scores": scores,
+                "deductions": deductions_applied,
+                "final_score": final_total,
+                "veto_items": veto_triggered_items,
+                "score_zero_items": score_zero_items,
+                "score_overrides": score_override_notes,
+                "duration": duration.strip() if group == "实操组" else "",
+            }
+            submission_fingerprint = hashlib.sha256(
+                json.dumps(
+                    submission_payload,
+                    ensure_ascii=False,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                ).encode("utf-8")
+            ).hexdigest()
+            pending_submission = st.session_state.get("pending_score_submission")
+            if (
+                not pending_submission
+                or pending_submission.get("fingerprint") != submission_fingerprint
+            ):
+                pending_submission = {
+                    "fingerprint": submission_fingerprint,
+                    "record_id": uuid.uuid4().hex,
+                }
+                st.session_state.pending_score_submission = pending_submission
+
+            try:
+                record = save_score(
+                    judge,
+                    contestant_id.strip(),
+                    scores,
+                    deductions=deductions_applied if deductions_applied else None,
+                    final_score=final_total,
+                    veto_triggered=veto_triggered,
+                    veto_items=veto_triggered_items if veto_triggered_items else None,
+                    score_zero_triggered=score_zero_triggered,
+                    score_zero_items=score_zero_items if score_zero_items else None,
+                    score_overrides=score_override_notes if score_override_notes else None,
+                    duration=duration.strip() if group == "实操组" else None,
+                    record_id=pending_submission["record_id"],
+                )
+            except ScorePersistenceError as exc:
+                st.error(f"❌ {exc}")
+            else:
+                st.session_state.pop("pending_score_submission", None)
+                st.success(
+                    f"✅ {judge['name']} 裁判 → 选手 {record['contestant_id']} "
+                    f"得分 {record['total_score']}/{record['total_max']}，云端已确认保存！"
+                )
+                st.session_state.submit_round += 1
+                st.rerun()
 
 
 # ===================== 历史记录页面 =====================
@@ -634,7 +676,7 @@ def render_scoring_page(judge: dict):
 def render_history_page(judge: dict):
     """渲染历史评分记录"""
     group = judge["group"]
-    records = get_all_scores(group)
+    records = get_all_scores(group, refresh_remote=True)
 
     st.markdown(f"### 📊 {group}评分记录")
 
@@ -726,11 +768,25 @@ def render_admin_page():
     with col1:
         st.markdown("#### 导出评分数据")
         for group in get_groups():
-            records = get_all_scores(group)
+            try:
+                records = get_all_scores(
+                    group,
+                    refresh_remote=True,
+                    require_remote=True,
+                )
+            except ScorePersistenceError as exc:
+                st.error(f"**{group}**：无法读取完整历史记录：{exc}")
+                continue
             if records:
                 st.markdown(f"**{group}**: {len(records)} 条记录")
                 if st.button(f"📥 导出 {group} Excel", key=f"export_{group}", use_container_width=True):
-                    file_path = export_to_excel(group)
+                    export_failed = False
+                    try:
+                        file_path = export_to_excel(group)
+                    except ScorePersistenceError as exc:
+                        st.error(f"无法生成完整历史记录：{exc}")
+                        file_path = None
+                        export_failed = True
                     if file_path:
                         with open(file_path, "rb") as f:
                             st.download_button(
@@ -741,7 +797,7 @@ def render_admin_page():
                                 use_container_width=True,
                             )
                         st.success(f"✅ {group} 评分数据已生成")
-                    else:
+                    elif not export_failed:
                         st.warning(f"{group} 暂无评分数据")
             else:
                 st.info(f"**{group}**: 暂无评分数据")
@@ -749,7 +805,13 @@ def render_admin_page():
     with col2:
         st.markdown("#### 导出全部数据")
         if st.button("📥 导出所有组 Excel", use_container_width=True, type="primary"):
-            results = export_all_to_excel()
+            export_failed = False
+            try:
+                results = export_all_to_excel()
+            except ScorePersistenceError as exc:
+                st.error(f"无法生成全部历史记录：{exc}")
+                results = {}
+                export_failed = True
             if results:
                 for group, file_path in results.items():
                     with open(file_path, "rb") as f:
@@ -761,7 +823,7 @@ def render_admin_page():
                             use_container_width=True,
                         )
                 st.success("✅ 所有组数据已生成")
-            else:
+            elif not export_failed:
                 st.warning("暂无评分数据可导出")
 
     # 查看所有裁判注册信息

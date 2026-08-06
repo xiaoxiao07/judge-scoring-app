@@ -186,9 +186,10 @@ def apply_practical_score_overrides(
         if note not in override_notes:
             override_notes.append(note)
 
-    if auxiliary_task_card == "任务卡1":
+    if auxiliary_task_card in ("任务卡1", "任务卡1及任务卡2"):
         zero_scores(TASK_CARD_1_BROADCAST_CRITERIA, "任务卡1内容播报")
-    elif auxiliary_task_card == "任务卡2":
+
+    if auxiliary_task_card in ("任务卡2", "任务卡1及任务卡2"):
         zero_scores(TASK_CARD_2_BROADCAST_CRITERIA, "任务卡2内容播报")
         zero_scores(
             ASSEMBLY_AND_PRECISION_CRITERIA,
