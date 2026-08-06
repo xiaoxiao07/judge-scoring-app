@@ -29,196 +29,135 @@ DEFENSE_CRITERIA = {
     },
 }
 
-# 实操组评分标准（总分100分）- 依据具身智能精密装配赛题评分细则
+# 实操组评分标准（总分100分）
+# 依据《仿真操作打分表》和《具身智能精密装配赛题评分细则》，
+# 每个可独立判分的对象均单列一行，裁判只需点选该点允许的分值。
+VOICE_MODULE = "一、语音交互功能实现（12分）"
+TASK_CARD_MODULE = "二、大模型任务卡解析（34分）"
+ASSEMBLY_MODULE = "三、装配流程（24分）"
+PRECISION_MODULE = "四、装配精度（30分）"
+
+PRECISION_OPTIONS = [
+    {"label": "0mm → 5分", "value": 5},
+    {"label": "1mm → 4.9分", "value": 4.9},
+    {"label": "2mm → 4.7分", "value": 4.7},
+    {"label": "3mm → 4.4分", "value": 4.4},
+    {"label": "4mm → 3.5分", "value": 3.5},
+    {"label": "5mm → 2.5分", "value": 2.5},
+    {"label": "5-10mm → 2分", "value": 2},
+    {"label": "10-15mm → 1分", "value": 1},
+    {"label": "15-20mm → 0.5分", "value": 0.5},
+    {"label": ">20mm → 0分", "value": 0},
+]
+
+
+def _score_item(max_score, module, options, submodule=None, display_name=None):
+    """构造一个只通过按钮点选的实操得分项。"""
+    item = {
+        "max": max_score,
+        "module": module,
+        "options": options,
+    }
+    if submodule:
+        item["submodule"] = submodule
+    if display_name:
+        item["display_name"] = display_name
+    return item
+
+
 PRACTICAL_CRITERIA = {
-    # 一、语音交互功能实现 (12分) — 仅 0/满分 两档按钮
-    "唤醒与基础回应": {
-        "max": 2,
-        "description": "机器人支持语音唤醒功能，统一唤醒词为'小具同学'，唤醒后机器人需语音回应'我已就绪，请下达指令'",
-        "module": "一、语音交互功能实现(12分)",
-        "score_range": "0~2分",
-        "options": [0, 2],
+    # 一、语音交互功能实现（4个独立得分点）
+    "唤醒与基础回应": _score_item(2, VOICE_MODULE, [0, 2]),
+    "具备下达指令触发识别任务卡能力": _score_item(
+        2, VOICE_MODULE, [0, 2]
+    ),
+    "语音提示任务已完成": _score_item(4, VOICE_MODULE, [0, 4]),
+    "语音提示两个任务均已完成": _score_item(4, VOICE_MODULE, [0, 4]),
+
+    # 二、大模型任务卡解析（2张任务卡 + 1个推理过程 + 12个播报点）
+    "任务卡1视觉识别": _score_item(
+        2,
+        TASK_CARD_MODULE,
+        [0, 2],
+        submodule="任务卡视觉识别（2分/张，共2张）",
+        display_name="任务卡1",
+    ),
+    "任务卡2视觉识别": _score_item(
+        2,
+        TASK_CARD_MODULE,
+        [0, 2],
+        submodule="任务卡视觉识别（2分/张，共2张）",
+        display_name="任务卡2",
+    ),
+    "大模型推理过程展示": _score_item(
+        6,
+        TASK_CARD_MODULE,
+        [0, 6],
+        submodule="大模型推理过程展示（6分）",
+    ),
+    **{
+        f"任务卡1场景{index}内容播报": _score_item(
+            2,
+            TASK_CARD_MODULE,
+            [0, 2],
+            submodule="任务卡1内容播报（2分/场景，共6个场景）",
+            display_name=f"场景{index}",
+        )
+        for index in range(1, 7)
     },
-    "具备下达指令触发识别任务卡能力": {
-        "max": 2,
-        "description": "语音交互功能应具备通过语音唤醒交互开展任务卡识别的功能",
-        "module": "一、语音交互功能实现(12分)",
-        "score_range": "0~2分",
-        "options": [0, 2],
+    **{
+        f"任务卡2顺序{index}内容播报": _score_item(
+            2,
+            TASK_CARD_MODULE,
+            [0, 2],
+            submodule="任务卡2内容播报（2分/顺序，共6个顺序）",
+            display_name=f"顺序{index}",
+        )
+        for index in range(1, 7)
     },
-    "语音提示任务已完成": {
-        "max": 4,
-        "description": "每次任务卡执行完成后，需语音提示'任务已完成'",
-        "module": "一、语音交互功能实现(12分)",
-        "score_range": "0~4分",
-        "options": [0, 4],
+
+    # 三、装配流程（12个识别结果 + 6次抓取 + 6次放置）
+    **{
+        f"视觉识别结果{index}": _score_item(
+            1,
+            ASSEMBLY_MODULE,
+            [0, 1],
+            submodule="视觉识别（1分/个，共12个识别结果）",
+            display_name=f"识别结果{index}",
+        )
+        for index in range(1, 13)
     },
-    "语音提示两个任务均已完成": {
-        "max": 4,
-        "description": "两个任务卡全部完成要语音播报告知'两个任务均已完成'",
-        "module": "一、语音交互功能实现(12分)",
-        "score_range": "0~4分",
-        "options": [0, 4],
+    **{
+        f"方块{index}抓取正确": _score_item(
+            1,
+            ASSEMBLY_MODULE,
+            [0, 1],
+            submodule="抓取正确（1分/个，共6个方块）",
+            display_name=f"方块{index}",
+        )
+        for index in range(1, 7)
     },
-    # 二、大模型任务卡解析 (34分)
-    "任务卡视觉识别": {
-        "max": 4,
-        "description": "裁判随机抽取任务卡共2张，选手通过视觉实时展示视觉流程与识别结果（2分/张）",
-        "module": "二、大模型任务卡解析(34分)",
-        "score_range": "0~4分（2分/张，共2张）",
-        "options": [0, 2, 4],
+    **{
+        f"方块{index}放置正确": _score_item(
+            1,
+            ASSEMBLY_MODULE,
+            [0, 1],
+            submodule="放置正确（1分/个，共6个方块）",
+            display_name=f"方块{index}",
+        )
+        for index in range(1, 7)
     },
-    "大模型推理过程展示": {
-        "max": 6,
-        "description": "大模型解析过程展示实时带时间戳的大模型分析文本记录，推理过程清晰可见",
-        "module": "二、大模型任务卡解析(34分)",
-        "score_range": "0~6分",
-        "options": [0, 6],
-    },
-    "任务卡1内容播报": {
-        "max": 12,
-        "description": "按照任务卡1的6个场景进行正确的语音播报（2分/场景）",
-        "module": "二、大模型任务卡解析(34分)",
-        "score_range": "0~12分（2分/场景，共6场景）",
-        "options": list(range(13)),
-    },
-    "任务卡2内容播报": {
-        "max": 12,
-        "description": "按照任务卡2的6个装配顺序进行正确的语音播报（2分/顺序）",
-        "module": "二、大模型任务卡解析(34分)",
-        "score_range": "0~12分（2分/顺序，共6顺序）",
-        "options": list(range(13)),
-    },
-    # 三、装配流程 (24分)
-    "视觉识别结果": {
-        "max": 12,
-        "description": "视觉识别包括方块物料与托盘放置位置、颜色信息，共12个识别结果（1分/个）",
-        "module": "三、装配流程(24分)",
-        "score_range": "0~12分（1分/个，共12个识别结果）",
-        "options": list(range(13)),
-    },
-    "抓取正确": {
-        "max": 6,
-        "description": "6个物料方块是否按照任务卡要求进行正确抓取（1分/个）",
-        "module": "三、装配流程(24分)",
-        "score_range": "0~6分（1分/个，共6个物料）",
-        "options": list(range(7)),
-    },
-    "放置正确": {
-        "max": 6,
-        "description": "6个物料方块所放置托盘位置是否按照任务卡要求进行正确放置（1分/个）",
-        "module": "三、装配流程(24分)",
-        "score_range": "0~6分（1分/个，共6个物料）",
-        "options": list(range(7)),
-    },
-    # 四、装配精度 (30分)
-    "方块1装配精度": {
-        "max": 5,
-        "description": "方块1放置精度：0mm→5分，1mm→4.9分，2mm→4.7分，3mm→4.4分，4mm→3.5分，5mm→2.5分，5-10mm→2分，10-15mm→1分，15-20mm→0.5分，超出20mm记0分",
-        "module": "四、装配精度(30分)",
-        "score_range": "0~5分",
-        "options": [
-            {"label": "0mm → 5分", "value": 5},
-            {"label": "1mm → 4.9分", "value": 4.9},
-            {"label": "2mm → 4.7分", "value": 4.7},
-            {"label": "3mm → 4.4分", "value": 4.4},
-            {"label": "4mm → 3.5分", "value": 3.5},
-            {"label": "5mm → 2.5分", "value": 2.5},
-            {"label": "5-10mm → 2分", "value": 2},
-            {"label": "10-15mm → 1分", "value": 1},
-            {"label": "15-20mm → 0.5分", "value": 0.5},
-            {"label": ">20mm → 0分", "value": 0},
-        ],
-    },
-    "方块2装配精度": {
-        "max": 5,
-        "description": "方块2放置精度（参照上方精度判定标准）",
-        "module": "四、装配精度(30分)",
-        "score_range": "0~5分",
-        "options": [
-            {"label": "0mm → 5分", "value": 5},
-            {"label": "1mm → 4.9分", "value": 4.9},
-            {"label": "2mm → 4.7分", "value": 4.7},
-            {"label": "3mm → 4.4分", "value": 4.4},
-            {"label": "4mm → 3.5分", "value": 3.5},
-            {"label": "5mm → 2.5分", "value": 2.5},
-            {"label": "5-10mm → 2分", "value": 2},
-            {"label": "10-15mm → 1分", "value": 1},
-            {"label": "15-20mm → 0.5分", "value": 0.5},
-            {"label": ">20mm → 0分", "value": 0},
-        ],
-    },
-    "方块3装配精度": {
-        "max": 5,
-        "description": "方块3放置精度（参照上方精度判定标准）",
-        "module": "四、装配精度(30分)",
-        "score_range": "0~5分",
-        "options": [
-            {"label": "0mm → 5分", "value": 5},
-            {"label": "1mm → 4.9分", "value": 4.9},
-            {"label": "2mm → 4.7分", "value": 4.7},
-            {"label": "3mm → 4.4分", "value": 4.4},
-            {"label": "4mm → 3.5分", "value": 3.5},
-            {"label": "5mm → 2.5分", "value": 2.5},
-            {"label": "5-10mm → 2分", "value": 2},
-            {"label": "10-15mm → 1分", "value": 1},
-            {"label": "15-20mm → 0.5分", "value": 0.5},
-            {"label": ">20mm → 0分", "value": 0},
-        ],
-    },
-    "方块4装配精度": {
-        "max": 5,
-        "description": "方块4放置精度（参照上方精度判定标准）",
-        "module": "四、装配精度(30分)",
-        "score_range": "0~5分",
-        "options": [
-            {"label": "0mm → 5分", "value": 5},
-            {"label": "1mm → 4.9分", "value": 4.9},
-            {"label": "2mm → 4.7分", "value": 4.7},
-            {"label": "3mm → 4.4分", "value": 4.4},
-            {"label": "4mm → 3.5分", "value": 3.5},
-            {"label": "5mm → 2.5分", "value": 2.5},
-            {"label": "5-10mm → 2分", "value": 2},
-            {"label": "10-15mm → 1分", "value": 1},
-            {"label": "15-20mm → 0.5分", "value": 0.5},
-            {"label": ">20mm → 0分", "value": 0},
-        ],
-    },
-    "方块5装配精度": {
-        "max": 5,
-        "description": "方块5放置精度（参照上方精度判定标准）",
-        "module": "四、装配精度(30分)",
-        "score_range": "0~5分",
-        "options": [
-            {"label": "0mm → 5分", "value": 5},
-            {"label": "1mm → 4.9分", "value": 4.9},
-            {"label": "2mm → 4.7分", "value": 4.7},
-            {"label": "3mm → 4.4分", "value": 4.4},
-            {"label": "4mm → 3.5分", "value": 3.5},
-            {"label": "5mm → 2.5分", "value": 2.5},
-            {"label": "5-10mm → 2分", "value": 2},
-            {"label": "10-15mm → 1分", "value": 1},
-            {"label": "15-20mm → 0.5分", "value": 0.5},
-            {"label": ">20mm → 0分", "value": 0},
-        ],
-    },
-    "方块6装配精度": {
-        "max": 5,
-        "description": "方块6放置精度：超出20mm圈定范围记0分（参照上方精度判定标准）",
-        "module": "四、装配精度(30分)",
-        "score_range": "0~5分",
-        "options": [
-            {"label": "0mm → 5分", "value": 5},
-            {"label": "1mm → 4.9分", "value": 4.9},
-            {"label": "2mm → 4.7分", "value": 4.7},
-            {"label": "3mm → 4.4分", "value": 4.4},
-            {"label": "4mm → 3.5分", "value": 3.5},
-            {"label": "5mm → 2.5分", "value": 2.5},
-            {"label": "5-10mm → 2分", "value": 2},
-            {"label": "10-15mm → 1分", "value": 1},
-            {"label": "15-20mm → 0.5分", "value": 0.5},
-            {"label": ">20mm → 0分", "value": 0},
-        ],
+
+    # 四、装配精度（6个方块分别记录偏移位置）
+    **{
+        f"方块{index}装配精度": _score_item(
+            5,
+            PRECISION_MODULE,
+            PRECISION_OPTIONS,
+            submodule="物料方块偏移精度（5分/个，共6个方块）",
+            display_name=f"方块{index}",
+        )
+        for index in range(1, 7)
     },
 }
 
@@ -327,4 +266,3 @@ def get_veto(group: str) -> dict:
     if normalize_group(group) == "实操组":
         return PRACTICAL_VETO
     return {}
-

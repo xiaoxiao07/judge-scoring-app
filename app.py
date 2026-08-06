@@ -167,6 +167,15 @@ st.markdown(
         align-items: center !important;
         flex-wrap: nowrap !important;
     }
+    .submodule-title {
+        font-size: 16px;
+        font-weight: 700;
+        color: #2a4e8c !important;
+        margin: 14px 0 6px 0;
+        padding: 7px 10px;
+        border-left: 4px solid #4472C4;
+        background: #eef3fb;
+    }
     </style>
     """,
     unsafe_allow_html=True,
@@ -295,19 +304,22 @@ def render_scoring_page(judge: dict):
         key=f"contestant_id_{submit_round}",
     )
 
-    # 实操组记录用时
+    # 实操组必须保留并记录评分表中的完成时间 T
     duration = ""
     if group == "实操组":
-        col_t1, col_t2 = st.columns([1, 2])
-        with col_t1:
-            st.markdown("**⏱ 用时**")
-        with col_t2:
-            duration = st.text_input(
-                label="仿真演示用时",
-                placeholder="如: 4分30秒",
-                key=f"duration_{submit_round}",
-                label_visibility="collapsed",
-            )
+        with st.container(border=True):
+            name_col, value_col = st.columns([2, 5])
+            with name_col:
+                st.markdown(
+                    "<div class='score-row-name'>完成时间 T</div>",
+                    unsafe_allow_html=True,
+                )
+            with value_col:
+                duration = st.text_input(
+                    label="完成时间 T",
+                    key=f"duration_{submit_round}",
+                    label_visibility="collapsed",
+                )
 
     # 评分项
     scores = {}
@@ -323,13 +335,26 @@ def render_scoring_page(judge: dict):
         deductions_applied = {}
 
         for module_name, items in modules.items():
-            st.markdown(f"<div class='module-title'>{module_name}</div>", unsafe_allow_html=True)
+            st.markdown(
+                f"<div class='module-title'>{module_name}</div>",
+                unsafe_allow_html=True,
+            )
+            last_submodule = None
             for criterion_name, criterion_info in items:
+                submodule = criterion_info.get("submodule")
+                if submodule and submodule != last_submodule:
+                    st.markdown(
+                        f"<div class='submodule-title'>{submodule}</div>",
+                        unsafe_allow_html=True,
+                    )
+                last_submodule = submodule
+                display_name = criterion_info.get("display_name", criterion_name)
+
                 with st.container(border=True):
                     name_col, score_col = st.columns([2, 5])
                     with name_col:
                         st.markdown(
-                            f"<div class='score-row-name'>{criterion_name}</div>",
+                            f"<div class='score-row-name'>{display_name}</div>",
                             unsafe_allow_html=True,
                         )
                     with score_col:
@@ -466,6 +491,8 @@ def render_scoring_page(judge: dict):
     if submitted:
         if not contestant_id or not contestant_id.strip():
             st.error("请输入被评分选手的编号或姓名")
+        elif group == "实操组" and not duration.strip():
+            st.error("请输入完成时间 T")
         else:
             # 收集触发的否决项
             veto_triggered_items = []
@@ -481,7 +508,7 @@ def render_scoring_page(judge: dict):
                 final_score=final_total,
                 veto_triggered=veto_triggered,
                 veto_items=veto_triggered_items if veto_triggered_items else None,
-                duration=duration if duration else None,
+                duration=duration.strip() if group == "实操组" else None,
             )
             st.success(
                 f"✅ {judge['name']} 裁判 → 选手 {record['contestant_id']} "
