@@ -20,6 +20,8 @@ from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 
 from .scoring import get_criteria, get_total_score, get_groups, normalize_group
 
+MODULE_VERSION = "2026-08-06-cas-v1"
+
 # 数据目录
 DATA_DIR = Path(__file__).parent.parent / "data"
 

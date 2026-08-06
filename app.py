@@ -9,10 +9,22 @@
 """
 
 import hashlib
+import importlib
 import json
 import uuid
 
 import streamlit as st
+
+# Streamlit Cloud 可能在代码热更新时保留旧的已导入模块。仅在版本不匹配时
+# 重载依赖，确保 app.py 与持久化模块来自同一部署版本。
+from utils import auth as _auth_module
+from utils import data_manager as _data_manager_module
+from utils import scoring as _scoring_module
+
+if getattr(_data_manager_module, "MODULE_VERSION", "") != "2026-08-06-cas-v1":
+    _scoring_module = importlib.reload(_scoring_module)
+    _data_manager_module = importlib.reload(_data_manager_module)
+    _auth_module = importlib.reload(_auth_module)
 
 from utils.auth import (
     auto_login_from_token,
