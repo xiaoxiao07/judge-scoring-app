@@ -200,6 +200,195 @@ st.markdown(
         border-left: 4px solid #4472C4;
         background: #eef3fb;
     }
+    /* 手机端：评分项名称与选项上下排列，按钮在屏幕宽度内自动换行。 */
+    @media (max-width: 640px) {
+        html, body,
+        .stApp,
+        .stAppViewContainer,
+        [data-testid="stAppViewContainer"],
+        [data-testid="stMain"],
+        .main,
+        .block-container {
+            max-width: 100% !important;
+            overflow-x: hidden !important;
+        }
+
+        .block-container {
+            width: 100% !important;
+            padding: 0.75rem 0.65rem 3rem !important;
+        }
+
+        h1, .stMarkdown h1 { font-size: 1.55rem !important; }
+        h2, .stMarkdown h2 { font-size: 1.3rem !important; }
+        h3, .stMarkdown h3 { font-size: 1.12rem !important; }
+        h4, .stMarkdown h4 { font-size: 1rem !important; }
+
+        div[data-testid="stHorizontalBlock"] {
+            max-width: 100% !important;
+            min-width: 0 !important;
+            gap: 0.35rem !important;
+        }
+
+        div[data-testid="stColumn"] {
+            min-width: 0 !important;
+        }
+
+        div[data-testid="stVerticalBlockBorderWrapper"]:has(.score-row-name) {
+            width: 100% !important;
+            max-width: 100% !important;
+            overflow: hidden !important;
+        }
+
+        div[data-testid="stHorizontalBlock"]:has(.score-row-name) {
+            flex-direction: column !important;
+            flex-wrap: wrap !important;
+            align-items: stretch !important;
+            gap: 0.2rem !important;
+            width: 100% !important;
+        }
+
+        div[data-testid="stHorizontalBlock"]:has(.score-row-name)
+        > div[data-testid="stColumn"] {
+            flex: 0 0 auto !important;
+            min-height: 0 !important;
+            height: auto !important;
+            overflow: visible !important;
+        }
+
+        div[data-testid="stHorizontalBlock"]:has(.score-row-name)
+        > div[data-testid="stColumn"]
+        > div[data-testid="stVerticalBlockBorderWrapper"] {
+            height: auto !important;
+            min-height: 0 !important;
+            overflow: visible !important;
+        }
+
+        /* Streamlit 列元素保留了桌面端的固定高度，窄屏改为内容自适应。 */
+        div[data-testid="stHorizontalBlock"]:has(.score-row-name)
+        [data-testid="stElementContainer"],
+        div[data-testid="stHorizontalBlock"]:has(.score-row-name)
+        [data-testid="stVerticalBlock"] {
+            height: auto !important;
+            min-height: 0 !important;
+        }
+
+
+        div[data-testid="stHorizontalBlock"]:has(.score-row-name)
+        > div[data-testid="stColumn"]:has(.score-row-name),
+        div[data-testid="stHorizontalBlock"]:has(.score-row-name)
+        > div[data-testid="stColumn"]:has(.score-row-name)
+        > div[data-testid="stVerticalBlockBorderWrapper"],
+        div[data-testid="stHorizontalBlock"]:has(.score-row-name)
+        > div[data-testid="stColumn"]:has(.score-row-name)
+        [data-testid="stVerticalBlock"],
+        div[data-testid="stHorizontalBlock"]:has(.score-row-name)
+        > div[data-testid="stColumn"]:has(.score-row-name)
+        [data-testid="stElementContainer"] {
+            min-height: 24px !important;
+        }
+
+        .score-row-name {
+            min-height: 0;
+            padding: 0.1rem 0;
+            font-size: 14px;
+            line-height: 1.3;
+            overflow-wrap: anywhere;
+        }
+
+        .module-title {
+            margin: 0.75rem 0 0.35rem;
+            padding: 0.45rem 0.6rem;
+            font-size: 14px;
+            line-height: 1.3;
+        }
+
+        .submodule-title {
+            margin: 0.55rem 0 0.3rem;
+            padding: 0.35rem 0.5rem;
+            font-size: 13px;
+            line-height: 1.3;
+        }
+
+        div[role="radiogroup"] {
+            display: flex !important;
+            flex-wrap: wrap !important;
+            width: 100% !important;
+            max-width: 100% !important;
+            min-width: 0 !important;
+            gap: 4px !important;
+        }
+
+        div[role="radiogroup"] label {
+            flex: 0 1 auto !important;
+            max-width: 100% !important;
+            min-width: 0 !important;
+            min-height: 36px !important;
+            margin: 0 !important;
+            padding: 5px 8px !important;
+            border-width: 1px !important;
+            border-radius: 6px !important;
+            font-size: 13px !important;
+            line-height: 1.15 !important;
+            white-space: normal !important;
+            overflow-wrap: anywhere !important;
+        }
+
+        div[role="radiogroup"] label p,
+        div[role="radiogroup"] label span {
+            max-width: 100% !important;
+            margin: 0 !important;
+            font-size: inherit !important;
+            line-height: inherit !important;
+            white-space: normal !important;
+            overflow-wrap: anywhere !important;
+        }
+
+        .stButton button {
+            min-height: 40px !important;
+            padding: 0.35rem 0.6rem !important;
+            font-size: 14px !important;
+        }
+
+        button[data-testid="stTab"] {
+            min-width: 0 !important;
+            padding: 0.4rem 0.45rem !important;
+        }
+
+        button[data-testid="stTab"] p,
+        button[data-testid="stTab"] span {
+            font-size: 13px !important;
+            white-space: nowrap !important;
+        }
+
+        .judge-info-bar {
+            padding: 0.45rem 0.55rem;
+            margin-bottom: 0.35rem;
+            font-size: 13px;
+            overflow-wrap: anywhere;
+        }
+
+        .total-score-box {
+            padding: 0.65rem;
+            margin: 0.65rem 0;
+        }
+
+        .total-score-box .score-value {
+            font-size: 28px;
+        }
+    }
+
+    @media (max-width: 380px) {
+        .block-container {
+            padding-right: 0.45rem !important;
+            padding-left: 0.45rem !important;
+        }
+
+        div[role="radiogroup"] label {
+            min-height: 34px !important;
+            padding: 4px 6px !important;
+            font-size: 12px !important;
+        }
+    }
     </style>
     """,
     unsafe_allow_html=True,
