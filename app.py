@@ -22,7 +22,7 @@ from utils import auth as _auth_module
 from utils import data_manager as _data_manager_module
 from utils import scoring as _scoring_module
 
-if getattr(_data_manager_module, "MODULE_VERSION", "") != "2026-08-15-beijing-online-v1":
+if getattr(_data_manager_module, "MODULE_VERSION", "") != "2026-08-15-beijing-deductions-v2":
     _scoring_module = importlib.reload(_scoring_module)
     _data_manager_module = importlib.reload(_data_manager_module)
     _auth_module = importlib.reload(_auth_module)
@@ -186,6 +186,27 @@ st.markdown(
         font-weight: 700;
         line-height: 1.35;
         color: #1a1a1a !important;
+    }
+    .inline-deduction-name {
+        color: #b42318 !important;
+        border-left: 4px solid #d92d20;
+        padding-left: 10px;
+    }
+    div[data-testid="stVerticalBlockBorderWrapper"]:has(.score-row-name.inline-deduction-name) {
+        border-color: #f0a6a0 !important;
+        background: #fff4f3 !important;
+    }
+    div[data-testid="stVerticalBlockBorderWrapper"]:has(.score-row-name.inline-deduction-name)
+    div[role="radiogroup"] label {
+        border-color: #e6a09a !important;
+        background: #fff8f7 !important;
+        color: #9f1c13 !important;
+    }
+    div[data-testid="stVerticalBlockBorderWrapper"]:has(.score-row-name.inline-deduction-name)
+    div[role="radiogroup"] label[data-checked="true"] {
+        border-color: #b42318 !important;
+        background: #b42318 !important;
+        color: #FFFFFF !important;
     }
     div[data-testid="stVerticalBlockBorderWrapper"]:has(.score-row-name) {
         border: 1px solid #cfd6e4 !important;
@@ -501,6 +522,25 @@ def _render_score_buttons(
     )
 
 
+def _render_inline_deduction_buttons(
+    deduction_name: str,
+    deduction_info: dict,
+    submit_round: int,
+):
+    """渲染嵌在得分项下方的扣分按钮，并返回直接扣除的分值。"""
+    options = list(deduction_info.get("options", range(13)))
+    zero_index = options.index(0) if 0 in options else 0
+    return st.radio(
+        label=deduction_name,
+        options=options,
+        index=zero_index,
+        format_func=lambda value: "0分" if value == 0 else f"扣{value:g}分",
+        horizontal=True,
+        key=f"inline_ded_{deduction_name}_{submit_round}",
+        label_visibility="collapsed",
+    )
+
+
 def render_scoring_page(judge: dict):
     """渲染评分表单"""
     group = judge["group"]
@@ -563,6 +603,12 @@ def render_scoring_page(judge: dict):
             module = info.get("module", "其他")
             modules.setdefault(module, []).append((name, info))
 
+        inline_deduction_keys = {
+            info.get("inline_deduction")
+            for info in criteria.values()
+            if info.get("inline_deduction")
+        }
+
         for module_name, items in modules.items():
             st.markdown(
                 f"<div class='module-title'>{module_name}</div>",
@@ -593,14 +639,43 @@ def render_scoring_page(judge: dict):
                             submit_round,
                         )
 
+                inline_deduction_name = criterion_info.get("inline_deduction")
+                if (
+                    inline_deduction_name
+                    and inline_deduction_name in deductions_def
+                ):
+                    inline_info = deductions_def[inline_deduction_name]
+                    with st.container(border=True):
+                        name_col, score_col = st.columns([2, 5])
+                        with name_col:
+                            st.markdown(
+                                f"<div class='score-row-name inline-deduction-name'>"
+                                f"⚠️ 扣分项：{inline_deduction_name}</div>",
+                                unsafe_allow_html=True,
+                            )
+                        with score_col:
+                            inline_penalty = _render_inline_deduction_buttons(
+                                inline_deduction_name,
+                                inline_info,
+                                submit_round,
+                            )
+                    if inline_penalty > 0:
+                        deductions_applied[inline_deduction_name] = inline_penalty
+
         # 扣分项：次数类自动乘以单次扣分，规则类使用按钮选择
         auxiliary_task_card = ""
         assembly_intervened = False
 
         if deductions_def:
-            st.markdown("---")
-            st.markdown("#### ⚠️ 扣分项")
-            for ded_name, ded_info in deductions_def.items():
+            remaining_deductions = {
+                name: info
+                for name, info in deductions_def.items()
+                if name not in inline_deduction_keys
+            }
+            if remaining_deductions:
+                st.markdown("---")
+                st.markdown("#### ⚠️ 扣分项")
+            for ded_name, ded_info in remaining_deductions.items():
                 deduct_val = ded_info["deduct"]
                 mode = ded_info.get("mode", "per_count")
 

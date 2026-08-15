@@ -26,7 +26,7 @@ from .scoring import (
     normalize_group,
 )
 
-MODULE_VERSION = "2026-08-15-beijing-online-v1"
+MODULE_VERSION = "2026-08-15-beijing-deductions-v2"
 
 # 数据目录
 DATA_DIR = Path(__file__).parent.parent / "data"

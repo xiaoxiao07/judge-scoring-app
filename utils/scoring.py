@@ -51,7 +51,14 @@ PRECISION_OPTIONS = [
 ]
 
 
-def _score_item(max_score, module, options, submodule=None, display_name=None):
+def _score_item(
+    max_score,
+    module,
+    options,
+    submodule=None,
+    display_name=None,
+    inline_deduction=None,
+):
     """构造一个只通过按钮点选的实操得分项。"""
     item = {
         "max": max_score,
@@ -62,6 +69,8 @@ def _score_item(max_score, module, options, submodule=None, display_name=None):
         item["submodule"] = submodule
     if display_name:
         item["display_name"] = display_name
+    if inline_deduction:
+        item["inline_deduction"] = inline_deduction
     return item
 
 
@@ -220,6 +229,7 @@ BEIJING_MODEL_MODULE = "一、大模型智能体（30分）"
 BEIJING_VISION_MODULE = "二、VM视觉（20分）"
 BEIJING_ROBOT_MODULE = "三、机器人仿真（20分）"
 BEIJING_STEP_OPTIONS = list(range(0, 13, 2))
+BEIJING_DEDUCTION_OPTIONS = list(range(13))
 
 BEIJING_ONLINE_CRITERIA = {
     "推理过程展示": _score_item(
@@ -229,23 +239,47 @@ BEIJING_ONLINE_CRITERIA = {
         12, BEIJING_MODEL_MODULE, BEIJING_STEP_OPTIONS
     ),
     "任务二": _score_item(
-        12, BEIJING_MODEL_MODULE, BEIJING_STEP_OPTIONS
+        12,
+        BEIJING_MODEL_MODULE,
+        BEIJING_STEP_OPTIONS,
+        inline_deduction="任务二步骤扣分",
     ),
     "视觉流程": _score_item(
         8, BEIJING_VISION_MODULE, [0, 8]
     ),
     "格式数值输出": _score_item(
-        12, BEIJING_VISION_MODULE, BEIJING_STEP_OPTIONS
+        12,
+        BEIJING_VISION_MODULE,
+        BEIJING_STEP_OPTIONS,
+        inline_deduction="格式数据输出步骤扣分",
     ),
     "数据接收": _score_item(
         8, BEIJING_ROBOT_MODULE, [0, 8]
     ),
     "偏移与复位": _score_item(
-        12, BEIJING_ROBOT_MODULE, BEIJING_STEP_OPTIONS
+        12,
+        BEIJING_ROBOT_MODULE,
+        BEIJING_STEP_OPTIONS,
+        inline_deduction="偏移与复位步骤扣分",
     ),
 }
 
 BEIJING_ONLINE_DEDUCTIONS = {
+    "任务二步骤扣分": {
+        "deduct": 1,
+        "mode": "inline_amount",
+        "options": BEIJING_DEDUCTION_OPTIONS,
+    },
+    "格式数据输出步骤扣分": {
+        "deduct": 1,
+        "mode": "inline_amount",
+        "options": BEIJING_DEDUCTION_OPTIONS,
+    },
+    "偏移与复位步骤扣分": {
+        "deduct": 1,
+        "mode": "inline_amount",
+        "options": BEIJING_DEDUCTION_OPTIONS,
+    },
     "仿真动画展示不直观": {
         "deduct": 8,
         "mode": "binary_deduct",
@@ -263,6 +297,11 @@ BEIJING_ONLINE_DEDUCTIONS = {
         "mode": "binary_deduct",
         "inactive_label": "未发生",
         "active_label": "发生（扣10分）",
+    },
+    "中断扣分": {
+        "deduct": 5,
+        "mode": "per_count",
+        "description": "每次中断扣5分",
     },
 }
 
