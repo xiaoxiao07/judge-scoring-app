@@ -20,7 +20,7 @@ from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 
 from .scoring import get_criteria, get_total_score, get_groups, normalize_group
 
-MODULE_VERSION = "2026-08-06-cas-v1"
+MODULE_VERSION = "2026-08-15-selective-export-v1"
 
 # 数据目录
 DATA_DIR = Path(__file__).parent.parent / "data"
@@ -578,6 +578,7 @@ def save_score(
     score_overrides: Optional[list] = None,
     duration: Optional[str] = None,
     record_id: Optional[str] = None,
+    contestant_group: Optional[str] = None,
 ) -> dict:
     """
     保存一条评分记录。仅当 GitHub 已确认包含该 record_id 时返回成功；
@@ -605,6 +606,7 @@ def save_score(
                 "judge_id": judge_info["judge_id"],
                 "judge_group": group,
                 "contestant_id": contestant_id,
+                "contestant_group": contestant_group or "",
                 "scores": {
                     key: int(value)
                     if isinstance(value, float) and value.is_integer()
@@ -718,14 +720,14 @@ def _apply_sheet_layout(ws, headers: list, width_cap: int = 30):
         )
 
 
-def export_to_excel(group: str) -> Optional[Path]:
-    """刷新并导出某组全部历史评分；远端读取失败时拒绝生成不完整文件。"""
+def export_records_to_excel(
+    group: str,
+    records: list,
+    file_label: str = "评分记录",
+) -> Optional[Path]:
+    """将给定评分记录完整导出为 Excel，不重新读取或修改远端数据。"""
     normalized_group = normalize_group(group)
-    records = get_all_scores(
-        normalized_group,
-        refresh_remote=True,
-        require_remote=True,
-    )
+    records = _ensure_record_ids(records or [])
     if not records:
         return None
 
@@ -735,11 +737,34 @@ def export_to_excel(group: str) -> Optional[Path]:
     score_sheet.title = f"{normalized_group}评分记录"
 
     score_headers = [f"{key}({value['max']})" for key, value in criteria.items()]
-    has_duration = any(record.get("duration") for record in records)
-    headers = ["提交ID", "裁判姓名", "裁判编号", "裁判组", "选手编号/姓名"]
-    if has_duration:
-        headers.append("用时")
-    headers += score_headers + ["原始总分", "扣分合计", "最终总分", "满分", "评分时间"]
+    is_practical = normalized_group == "实操组"
+    if is_practical:
+        # 实操组固定列：A 选手编号、B 选手组别、C/D 空列、E 总分、F 时间。
+        headers = [
+            "选手编号",
+            "选手组别",
+            "",
+            "",
+            "总分",
+            "时间",
+            "裁判姓名",
+            "裁判编号",
+            "裁判组",
+            "评分时间",
+            "提交ID",
+            "原始总分",
+            "扣分合计",
+            "满分",
+        ] + score_headers
+    else:
+        headers = [
+            "提交ID",
+            "裁判姓名",
+            "裁判编号",
+            "裁判组",
+            "选手编号/姓名",
+            "选手组别",
+        ] + score_headers + ["原始总分", "扣分合计", "最终总分", "满分", "评分时间"]
     _style_header(score_sheet, headers)
 
     data_font = Font(size=11)
@@ -752,26 +777,49 @@ def export_to_excel(group: str) -> Optional[Path]:
     )
 
     for row_idx, record in enumerate(records, 2):
-        row_data = [
-            record.get("record_id", ""),
-            record.get("judge_name", ""),
-            record.get("judge_id", ""),
-            record.get("judge_group", normalized_group),
-            record.get("contestant_id", ""),
-        ]
-        if has_duration:
-            row_data.append(record.get("duration", ""))
-        for criterion_key in criteria:
-            row_data.append(record.get("scores", {}).get(criterion_key, 0))
         raw_score = record.get("raw_score", record.get("total_score", 0))
         deduction_total = record.get("deduction_total", 0)
-        row_data += [
-            raw_score,
-            deduction_total if deduction_total else "",
-            record.get("total_score", 0),
-            record.get("total_max", get_total_score(normalized_group)),
-            record.get("timestamp", ""),
-        ]
+        if is_practical:
+            row_data = [
+                record.get("contestant_id", ""),
+                record.get("contestant_group", ""),
+                "",
+                "",
+                record.get("total_score", 0),
+                record.get("duration", ""),
+                record.get("judge_name", ""),
+                record.get("judge_id", ""),
+                record.get("judge_group", normalized_group),
+                record.get("timestamp") or record.get("saved_at_utc", ""),
+                record.get("record_id", ""),
+                raw_score,
+                deduction_total if deduction_total else "",
+                record.get("total_max", get_total_score(normalized_group)),
+            ]
+            row_data += [
+                record.get("scores", {}).get(criterion_key, 0)
+                for criterion_key in criteria
+            ]
+        else:
+            row_data = [
+                record.get("record_id", ""),
+                record.get("judge_name", ""),
+                record.get("judge_id", ""),
+                record.get("judge_group", normalized_group),
+                record.get("contestant_id", ""),
+                record.get("contestant_group", ""),
+            ]
+            row_data += [
+                record.get("scores", {}).get(criterion_key, 0)
+                for criterion_key in criteria
+            ]
+            row_data += [
+                raw_score,
+                deduction_total if deduction_total else "",
+                record.get("total_score", 0),
+                record.get("total_max", get_total_score(normalized_group)),
+                record.get("timestamp") or record.get("saved_at_utc", ""),
+            ]
         for col_idx, value in enumerate(row_data, 1):
             cell = score_sheet.cell(row=row_idx, column=col_idx, value=value)
             cell.font = data_font
@@ -779,7 +827,20 @@ def export_to_excel(group: str) -> Optional[Path]:
             cell.border = thin_border
 
     _apply_sheet_layout(score_sheet, headers, width_cap=30)
-    score_sheet.column_dimensions["A"].width = 34
+    if is_practical:
+        score_sheet.column_dimensions["A"].width = 20
+        score_sheet.column_dimensions["B"].width = 18
+        score_sheet.column_dimensions["C"].width = 4
+        score_sheet.column_dimensions["D"].width = 4
+        score_sheet.column_dimensions["E"].width = 12
+        score_sheet.column_dimensions["F"].width = 14
+        score_sheet.column_dimensions["G"].width = 16
+        score_sheet.column_dimensions["H"].width = 16
+        score_sheet.column_dimensions["I"].width = 12
+        score_sheet.column_dimensions["J"].width = 20
+        score_sheet.column_dimensions["K"].width = 34
+    else:
+        score_sheet.column_dimensions["A"].width = 34
 
     audit_sheet = workbook.create_sheet(f"{normalized_group}提交审计")
     record_jsons = [
@@ -797,6 +858,7 @@ def export_to_excel(group: str) -> Optional[Path]:
         "裁判编号",
         "裁判组",
         "选手编号/姓名",
+        "选手组别",
         "用时",
         "扣分明细",
         "自动归零说明",
@@ -807,6 +869,7 @@ def export_to_excel(group: str) -> Optional[Path]:
         "评分时间",
     ] + [f"完整记录JSON-{index + 1}" for index in range(max_json_chunks)]
     _style_header(audit_sheet, audit_headers)
+    json_start_col = len(audit_headers) - max_json_chunks + 1
 
     for row_idx, (record, record_json) in enumerate(zip(records, record_jsons), 2):
         chunks = [
@@ -820,6 +883,7 @@ def export_to_excel(group: str) -> Optional[Path]:
             record.get("judge_id", ""),
             record.get("judge_group", normalized_group),
             record.get("contestant_id", ""),
+            record.get("contestant_group", ""),
             record.get("duration", ""),
             _format_mapping(record.get("deductions")),
             _format_items(record.get("score_overrides")),
@@ -827,35 +891,50 @@ def export_to_excel(group: str) -> Optional[Path]:
             _format_items(record.get("score_zero_items")),
             "是" if record.get("veto_triggered") else "否",
             _format_items(record.get("veto_items")),
-            record.get("timestamp", ""),
+            record.get("timestamp") or record.get("saved_at_utc", ""),
         ] + chunks
         for col_idx, value in enumerate(row_data, 1):
             cell = audit_sheet.cell(row=row_idx, column=col_idx, value=value)
             cell.font = data_font
             cell.alignment = Alignment(
-                horizontal="left" if col_idx >= 7 else "center",
+                horizontal="left" if col_idx >= 8 else "center",
                 vertical="top",
-                wrap_text=col_idx >= 7,
+                wrap_text=col_idx >= 8,
             )
             cell.border = thin_border
         audit_sheet.row_dimensions[row_idx].height = 42
 
     _apply_sheet_layout(audit_sheet, audit_headers, width_cap=38)
     audit_sheet.column_dimensions["A"].width = 34
-    for col_idx in range(7, 14):
+    for col_idx in range(8, json_start_col):
         audit_sheet.column_dimensions[openpyxl.utils.get_column_letter(col_idx)].width = 38
     # 原始 JSON 用于完整取证，默认隐藏以保持审计表可读；需要时可在 Excel 中取消隐藏。
-    for col_idx in range(14, len(audit_headers) + 1):
+    for col_idx in range(json_start_col, len(audit_headers) + 1):
         dimension = audit_sheet.column_dimensions[
             openpyxl.utils.get_column_letter(col_idx)
         ]
         dimension.width = 20
         dimension.hidden = True
 
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    file_path = DATA_DIR / f"{normalized_group}_评分记录_{timestamp}.xlsx"
+    safe_label = "".join(
+        "_" if char in '\\/:*?"<>|' else char
+        for char in str(file_label)
+    ).strip(" ._") or "评分记录"
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+    file_path = DATA_DIR / f"{normalized_group}_{safe_label}_{timestamp}.xlsx"
     workbook.save(file_path)
     return file_path
+
+
+def export_to_excel(group: str) -> Optional[Path]:
+    """刷新并导出某组全部历史评分；远端读取失败时拒绝生成不完整文件。"""
+    normalized_group = normalize_group(group)
+    records = get_all_scores(
+        normalized_group,
+        refresh_remote=True,
+        require_remote=True,
+    )
+    return export_records_to_excel(normalized_group, records)
 
 
 def export_all_to_excel() -> dict:

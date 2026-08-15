@@ -13,6 +13,7 @@ import importlib
 import json
 import uuid
 
+import pandas as pd
 import streamlit as st
 
 # Streamlit Cloud 可能在代码热更新时保留旧的已导入模块。仅在版本不匹配时
@@ -21,7 +22,7 @@ from utils import auth as _auth_module
 from utils import data_manager as _data_manager_module
 from utils import scoring as _scoring_module
 
-if getattr(_data_manager_module, "MODULE_VERSION", "") != "2026-08-06-cas-v1":
+if getattr(_data_manager_module, "MODULE_VERSION", "") != "2026-08-15-selective-export-v1":
     _scoring_module = importlib.reload(_scoring_module)
     _data_manager_module = importlib.reload(_data_manager_module)
     _auth_module = importlib.reload(_auth_module)
@@ -47,6 +48,7 @@ from utils.data_manager import (
     init_data_files,
     save_score,
     get_all_scores,
+    export_records_to_excel,
     export_to_excel,
     export_all_to_excel,
 )
@@ -517,6 +519,14 @@ def render_scoring_page(judge: dict):
         key=f"contestant_id_{submit_round}",
     )
 
+    contestant_group = st.selectbox(
+        "👥 选手组别",
+        options=["本科研究生组", "高职高专组", "国际留学生组"],
+        index=None,
+        placeholder="请选择选手组别",
+        key=f"contestant_group_{submit_round}",
+    )
+
     # 实操组必须保留并记录评分表中的完成时间 T
     duration = ""
     if group == "实操组":
@@ -804,12 +814,14 @@ def render_scoring_page(judge: dict):
             "✅ 提交评分",
             type="primary",
             use_container_width=True,
-            disabled=not contestant_id,
+            disabled=not contestant_id.strip() or not contestant_group,
         )
 
     if submitted:
         if not contestant_id or not contestant_id.strip():
             st.error("请输入被评分选手的编号或姓名")
+        elif not contestant_group:
+            st.error("请选择选手组别")
         elif group == "实操组" and not duration.strip():
             st.error("请输入完成时间 T")
         else:
@@ -817,6 +829,7 @@ def render_scoring_page(judge: dict):
                 "judge_id": judge["judge_id"],
                 "judge_group": group,
                 "contestant_id": contestant_id.strip(),
+                "contestant_group": contestant_group,
                 "scores": scores,
                 "deductions": deductions_applied,
                 "final_score": final_total,
@@ -858,6 +871,7 @@ def render_scoring_page(judge: dict):
                     score_overrides=score_override_notes if score_override_notes else None,
                     duration=duration.strip() if group == "实操组" else None,
                     record_id=pending_submission["record_id"],
+                    contestant_group=contestant_group,
                 )
             except ScorePersistenceError as exc:
                 st.error(f"❌ {exc}")
@@ -900,9 +914,9 @@ def render_history_page(judge: dict):
     has_deductions = any(r.get("deductions") for r in my_records)
     has_duration = any(r.get("duration") for r in my_records)
     if has_duration:
-        time_header = ["选手编号", "用时"] + score_headers
+        time_header = ["选手编号", "选手组别", "用时"] + score_headers
     else:
-        time_header = ["选手编号"] + score_headers
+        time_header = ["选手编号", "选手组别"] + score_headers
     if has_deductions:
         headers = time_header + ["原始分", "扣分", "最终得分", "评分时间"]
     else:
@@ -910,7 +924,7 @@ def render_history_page(judge: dict):
 
     table_data = []
     for r in reversed(my_records):  # 最新的在前
-        row = [r["contestant_id"]]
+        row = [r["contestant_id"], r.get("contestant_group", "")]
         if has_duration:
             row.append(r.get("duration", ""))
         for c in score_headers:
@@ -964,6 +978,7 @@ def render_admin_page():
     # 验证通过后显示管理功能
     st.success("✅ 已通过管理验证")
 
+    admin_records = {}
     col1, col2 = st.columns(2)
 
     with col1:
@@ -975,6 +990,7 @@ def render_admin_page():
                     refresh_remote=True,
                     require_remote=True,
                 )
+                admin_records[group] = records
             except ScorePersistenceError as exc:
                 st.error(f"**{group}**：无法读取完整历史记录：{exc}")
                 continue
@@ -1026,6 +1042,129 @@ def render_admin_page():
                 st.success("✅ 所有组数据已生成")
             elif not export_failed:
                 st.warning("暂无评分数据可导出")
+
+    st.markdown("---")
+    st.markdown("#### 📋 按记录选择导出")
+    selected_group = st.selectbox(
+        "记录组别",
+        options=get_groups(),
+        key="admin_record_group",
+    )
+
+    if selected_group not in admin_records:
+        st.warning(f"{selected_group} 历史记录暂时无法读取")
+    elif not admin_records[selected_group]:
+        st.info(f"{selected_group} 暂无评分记录")
+    else:
+        ordered_records = sorted(
+            admin_records[selected_group],
+            key=lambda record: (
+                str(record.get("timestamp") or record.get("saved_at_utc") or ""),
+                str(record.get("record_id", "")),
+            ),
+            reverse=True,
+        )
+        record_rows = []
+        for record in ordered_records:
+            score_value = record.get("total_score", 0)
+            if isinstance(score_value, (int, float)):
+                score_value = f"{score_value:g}"
+            record_rows.append(
+                {
+                    "选择": False,
+                    "评分时间": record.get("timestamp") or record.get("saved_at_utc", ""),
+                    "裁判姓名": record.get("judge_name", ""),
+                    "裁判编号": record.get("judge_id", ""),
+                    "裁判组": record.get("judge_group", selected_group),
+                    "选手编号": record.get("contestant_id", ""),
+                    "选手组别": record.get("contestant_group", ""),
+                    "总分": score_value,
+                    "完成时间": record.get("duration", ""),
+                    "提交ID": record.get("record_id", ""),
+                }
+            )
+
+        record_frame = pd.DataFrame(record_rows)
+        edited_frame = st.data_editor(
+            record_frame,
+            column_config={
+                "选择": st.column_config.CheckboxColumn("选择", default=False),
+                "评分时间": st.column_config.TextColumn("评分时间", width="medium"),
+                "裁判姓名": st.column_config.TextColumn("裁判姓名", width="small"),
+                "裁判编号": st.column_config.TextColumn("裁判编号", width="small"),
+                "裁判组": st.column_config.TextColumn("裁判组", width="small"),
+                "选手编号": st.column_config.TextColumn("选手编号", width="small"),
+                "选手组别": st.column_config.TextColumn("选手组别", width="medium"),
+                "总分": st.column_config.TextColumn("总分", width="small"),
+                "完成时间": st.column_config.TextColumn("完成时间", width="small"),
+                "提交ID": st.column_config.TextColumn("提交ID", width="large"),
+            },
+            disabled=[column for column in record_frame.columns if column != "选择"],
+            hide_index=True,
+            use_container_width=True,
+            key=f"admin_record_selector_{selected_group}",
+        )
+        selected_ids = set(
+            edited_frame.loc[
+                edited_frame["选择"].fillna(False),
+                "提交ID",
+            ].astype(str)
+        )
+        selected_records = [
+            record
+            for record in ordered_records
+            if str(record.get("record_id", "")) in selected_ids
+        ]
+        st.caption(f"已选择 {len(selected_records)} / {len(ordered_records)} 条记录")
+
+        selection_signature = hashlib.sha256(
+            json.dumps(
+                {
+                    "group": selected_group,
+                    "record_ids": sorted(selected_ids),
+                },
+                ensure_ascii=False,
+                sort_keys=True,
+            ).encode("utf-8")
+        ).hexdigest()
+
+        if st.button(
+            "📥 生成选中记录 Excel",
+            type="primary",
+            use_container_width=True,
+            disabled=not selected_records,
+        ):
+            try:
+                file_path = export_records_to_excel(
+                    selected_group,
+                    selected_records,
+                    file_label="选中评分记录",
+                )
+                with open(file_path, "rb") as export_file:
+                    export_data = export_file.read()
+            except (OSError, ValueError) as exc:
+                st.error(f"选中记录导出失败：{exc}")
+            else:
+                st.session_state.selected_record_export = {
+                    "group": selected_group,
+                    "signature": selection_signature,
+                    "file_name": file_path.name,
+                    "data": export_data,
+                }
+
+        selected_export = st.session_state.get("selected_record_export", {})
+        if (
+            selected_export.get("group") == selected_group
+            and selected_export.get("signature") == selection_signature
+            and selected_records
+        ):
+            st.download_button(
+                label=f"⬇️ 下载选中的 {len(selected_records)} 条记录",
+                data=selected_export["data"],
+                file_name=selected_export["file_name"],
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True,
+            )
 
     # 查看所有裁判注册信息
     st.markdown("---")
