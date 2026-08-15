@@ -22,7 +22,7 @@ from utils import auth as _auth_module
 from utils import data_manager as _data_manager_module
 from utils import scoring as _scoring_module
 
-if getattr(_data_manager_module, "MODULE_VERSION", "") != "2026-08-15-selective-export-v1":
+if getattr(_data_manager_module, "MODULE_VERSION", "") != "2026-08-15-admin-delete-v1":
     _scoring_module = importlib.reload(_scoring_module)
     _data_manager_module = importlib.reload(_data_manager_module)
     _auth_module = importlib.reload(_auth_module)
@@ -48,6 +48,9 @@ from utils.data_manager import (
     init_data_files,
     save_score,
     get_all_scores,
+    get_all_judges,
+    delete_judges,
+    delete_score_records,
     export_records_to_excel,
     export_to_excel,
     export_all_to_excel,
@@ -953,6 +956,51 @@ def render_history_page(judge: dict):
 # ===================== 管理页面 =====================
 
 
+def _judge_identity(name, judge_id) -> tuple:
+    return (str(name or "").strip(), str(judge_id or "").strip())
+
+
+def _summarize_judge_records(records_by_group: dict) -> list:
+    """按裁判姓名+编号聚合评分记录，跨选手编号只显示一行。"""
+    summaries = {}
+    for group, records in (records_by_group or {}).items():
+        for record in records or []:
+            key = _judge_identity(
+                record.get("judge_name", ""),
+                record.get("judge_id", ""),
+            )
+            summary = summaries.setdefault(
+                key,
+                {
+                    "judge_name": key[0],
+                    "judge_id": key[1],
+                    "groups": set(),
+                    "records_by_group": {},
+                    "times": [],
+                },
+            )
+            summary["groups"].add(group)
+            summary["records_by_group"].setdefault(group, []).append(record)
+            record_time = record.get("timestamp") or record.get("saved_at_utc") or ""
+            if record_time:
+                summary["times"].append(str(record_time))
+
+    result = []
+    for summary in summaries.values():
+        summary["groups"] = sorted(summary["groups"])
+        summary["record_count"] = sum(
+            len(records) for records in summary["records_by_group"].values()
+        )
+        ordered_times = sorted(summary.pop("times"))
+        summary["first_time"] = ordered_times[0] if ordered_times else ""
+        summary["last_time"] = ordered_times[-1] if ordered_times else ""
+        result.append(summary)
+    return sorted(
+        result,
+        key=lambda item: (item["judge_name"], item["judge_id"]),
+    )
+
+
 def render_admin_page():
     """渲染管理页面（导出 Excel 等）"""
     st.markdown("### ⚙️ 数据管理")
@@ -977,6 +1025,12 @@ def render_admin_page():
 
     # 验证通过后显示管理功能
     st.success("✅ 已通过管理验证")
+    admin_notice = st.session_state.pop("admin_notice", None)
+    admin_warning = st.session_state.pop("admin_warning", None)
+    if admin_notice:
+        st.success(admin_notice)
+    if admin_warning:
+        st.warning(admin_warning)
 
     admin_records = {}
     col1, col2 = st.columns(2)
@@ -1044,84 +1098,72 @@ def render_admin_page():
                 st.warning("暂无评分数据可导出")
 
     st.markdown("---")
-    st.markdown("#### 📋 按记录选择导出")
-    selected_group = st.selectbox(
-        "记录组别",
-        options=get_groups(),
-        key="admin_record_group",
-    )
+    st.markdown("#### 👥 按裁判选择导出")
+    all_groups_loaded = set(admin_records) == set(get_groups())
+    judge_summaries = _summarize_judge_records(admin_records)
 
-    if selected_group not in admin_records:
-        st.warning(f"{selected_group} 历史记录暂时无法读取")
-    elif not admin_records[selected_group]:
-        st.info(f"{selected_group} 暂无评分记录")
+    if not all_groups_loaded:
+        st.warning("部分评分组读取失败，无法保证裁判数据完整，暂不提供按裁判导出")
+    elif not judge_summaries:
+        st.info("暂无评分记录")
     else:
-        ordered_records = sorted(
-            admin_records[selected_group],
-            key=lambda record: (
-                str(record.get("timestamp") or record.get("saved_at_utc") or ""),
-                str(record.get("record_id", "")),
-            ),
-            reverse=True,
-        )
-        record_rows = []
-        for record in ordered_records:
-            score_value = record.get("total_score", 0)
-            if isinstance(score_value, (int, float)):
-                score_value = f"{score_value:g}"
-            record_rows.append(
-                {
-                    "选择": False,
-                    "评分时间": record.get("timestamp") or record.get("saved_at_utc", ""),
-                    "裁判姓名": record.get("judge_name", ""),
-                    "裁判编号": record.get("judge_id", ""),
-                    "裁判组": record.get("judge_group", selected_group),
-                    "选手编号": record.get("contestant_id", ""),
-                    "选手组别": record.get("contestant_group", ""),
-                    "总分": score_value,
-                    "完成时间": record.get("duration", ""),
-                    "提交ID": record.get("record_id", ""),
-                }
-            )
-
-        record_frame = pd.DataFrame(record_rows)
-        edited_frame = st.data_editor(
-            record_frame,
+        judge_rows = [
+            {
+                "选择": False,
+                "裁判姓名": summary["judge_name"],
+                "裁判编号": summary["judge_id"],
+                "评分组": "、".join(summary["groups"]),
+                "记录数": summary["record_count"],
+                "最早评分": summary["first_time"],
+                "最近评分": summary["last_time"],
+            }
+            for summary in judge_summaries
+        ]
+        judge_frame = pd.DataFrame(judge_rows)
+        edited_judges = st.data_editor(
+            judge_frame,
             column_config={
                 "选择": st.column_config.CheckboxColumn("选择", default=False),
-                "评分时间": st.column_config.TextColumn("评分时间", width="medium"),
                 "裁判姓名": st.column_config.TextColumn("裁判姓名", width="small"),
                 "裁判编号": st.column_config.TextColumn("裁判编号", width="small"),
-                "裁判组": st.column_config.TextColumn("裁判组", width="small"),
-                "选手编号": st.column_config.TextColumn("选手编号", width="small"),
-                "选手组别": st.column_config.TextColumn("选手组别", width="medium"),
-                "总分": st.column_config.TextColumn("总分", width="small"),
-                "完成时间": st.column_config.TextColumn("完成时间", width="small"),
-                "提交ID": st.column_config.TextColumn("提交ID", width="large"),
+                "评分组": st.column_config.TextColumn("评分组", width="small"),
+                "记录数": st.column_config.NumberColumn("记录数", width="small"),
+                "最早评分": st.column_config.TextColumn("最早评分", width="medium"),
+                "最近评分": st.column_config.TextColumn("最近评分", width="medium"),
             },
-            disabled=[column for column in record_frame.columns if column != "选择"],
+            disabled=[column for column in judge_frame.columns if column != "选择"],
             hide_index=True,
             use_container_width=True,
-            key=f"admin_record_selector_{selected_group}",
+            key="admin_judge_export_selector",
         )
-        selected_ids = set(
-            edited_frame.loc[
-                edited_frame["选择"].fillna(False),
-                "提交ID",
-            ].astype(str)
-        )
-        selected_records = [
-            record
-            for record in ordered_records
-            if str(record.get("record_id", "")) in selected_ids
+        selected_judge_keys = {
+            _judge_identity(row["裁判姓名"], row["裁判编号"])
+            for _, row in edited_judges.loc[
+                edited_judges["选择"].fillna(False)
+            ].iterrows()
+        }
+        selected_summaries = [
+            summary
+            for summary in judge_summaries
+            if _judge_identity(summary["judge_name"], summary["judge_id"])
+            in selected_judge_keys
         ]
-        st.caption(f"已选择 {len(selected_records)} / {len(ordered_records)} 条记录")
+        selected_record_ids = sorted(
+            str(record.get("record_id", ""))
+            for summary in selected_summaries
+            for records in summary["records_by_group"].values()
+            for record in records
+        )
+        st.caption(
+            f"已选择 {len(selected_summaries)} 位裁判，"
+            f"共 {len(selected_record_ids)} 条评分记录"
+        )
 
         selection_signature = hashlib.sha256(
             json.dumps(
                 {
-                    "group": selected_group,
-                    "record_ids": sorted(selected_ids),
+                    "judges": sorted([list(key) for key in selected_judge_keys]),
+                    "record_ids": selected_record_ids,
                 },
                 ensure_ascii=False,
                 sort_keys=True,
@@ -1129,63 +1171,230 @@ def render_admin_page():
         ).hexdigest()
 
         if st.button(
-            "📥 生成选中记录 Excel",
+            "📥 生成选中裁判的全部数据",
             type="primary",
             use_container_width=True,
-            disabled=not selected_records,
+            disabled=not selected_summaries,
         ):
             try:
-                file_path = export_records_to_excel(
-                    selected_group,
-                    selected_records,
-                    file_label="选中评分记录",
-                )
-                with open(file_path, "rb") as export_file:
-                    export_data = export_file.read()
+                export_files = []
+                for group in get_groups():
+                    group_records = [
+                        record
+                        for summary in selected_summaries
+                        for record in summary["records_by_group"].get(group, [])
+                    ]
+                    if not group_records:
+                        continue
+                    file_path = export_records_to_excel(
+                        group,
+                        group_records,
+                        file_label="按裁判选择导出",
+                    )
+                    with open(file_path, "rb") as export_file:
+                        export_files.append(
+                            {
+                                "group": group,
+                                "file_name": file_path.name,
+                                "data": export_file.read(),
+                            }
+                        )
             except (OSError, ValueError) as exc:
-                st.error(f"选中记录导出失败：{exc}")
+                st.error(f"选中裁判数据导出失败：{exc}")
             else:
-                st.session_state.selected_record_export = {
-                    "group": selected_group,
+                st.session_state.selected_judge_export = {
                     "signature": selection_signature,
-                    "file_name": file_path.name,
-                    "data": export_data,
+                    "files": export_files,
                 }
 
-        selected_export = st.session_state.get("selected_record_export", {})
+        selected_export = st.session_state.get("selected_judge_export", {})
         if (
-            selected_export.get("group") == selected_group
-            and selected_export.get("signature") == selection_signature
-            and selected_records
+            selected_export.get("signature") == selection_signature
+            and selected_summaries
         ):
-            st.download_button(
-                label=f"⬇️ 下载选中的 {len(selected_records)} 条记录",
-                data=selected_export["data"],
-                file_name=selected_export["file_name"],
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                use_container_width=True,
-            )
+            for export_file in selected_export.get("files", []):
+                st.download_button(
+                    label=f"⬇️ 下载 {export_file['group']} 全部选中裁判数据",
+                    data=export_file["data"],
+                    file_name=export_file["file_name"],
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    use_container_width=True,
+                    key=f"download_selected_judges_{export_file['group']}",
+                )
 
-    # 查看所有裁判注册信息
     st.markdown("---")
-    st.markdown("#### 📋 已注册裁判列表")
-    from utils.data_manager import get_all_judges
+    st.markdown("#### 🗑️ 删除管理")
+    with st.expander("删除已注册裁判或已有评分数据", expanded=False):
+        st.markdown("##### 删除已注册裁判")
+        try:
+            judges = get_all_judges(refresh_remote=True, require_remote=True)
+        except ScorePersistenceError as exc:
+            st.error(f"无法读取完整裁判列表：{exc}")
+            judges = None
 
-    judges = get_all_judges()
-    if judges:
-        judge_table = [[j["name"], j["judge_id"], j["group"]] for j in judges]
-        st.dataframe(
-            judge_table,
-            column_config={
-                0: st.column_config.TextColumn("裁判姓名"),
-                1: st.column_config.TextColumn("裁判编号"),
-                2: st.column_config.TextColumn("裁判组"),
-            },
-            hide_index=True,
-            use_container_width=True,
-        )
-    else:
-        st.info("暂无注册裁判")
+        if judges:
+            registered = {}
+            for judge in judges:
+                key = _judge_identity(
+                    judge.get("name", ""),
+                    judge.get("judge_id", ""),
+                )
+                registered.setdefault(key, set()).add(str(judge.get("group", "")))
+            registered_rows = [
+                {
+                    "删除": False,
+                    "裁判姓名": name,
+                    "裁判编号": judge_id,
+                    "注册组别": "、".join(sorted(groups)),
+                }
+                for (name, judge_id), groups in sorted(registered.items())
+            ]
+            registered_frame = pd.DataFrame(registered_rows)
+            edited_registered = st.data_editor(
+                registered_frame,
+                column_config={
+                    "删除": st.column_config.CheckboxColumn("删除", default=False),
+                    "裁判姓名": st.column_config.TextColumn("裁判姓名"),
+                    "裁判编号": st.column_config.TextColumn("裁判编号"),
+                    "注册组别": st.column_config.TextColumn("注册组别"),
+                },
+                disabled=[
+                    column for column in registered_frame.columns if column != "删除"
+                ],
+                hide_index=True,
+                use_container_width=True,
+                key="admin_registered_judge_delete_selector",
+            )
+            selected_registered_keys = [
+                _judge_identity(row["裁判姓名"], row["裁判编号"])
+                for _, row in edited_registered.loc[
+                    edited_registered["删除"].fillna(False)
+                ].iterrows()
+            ]
+            registered_delete_signature = hashlib.sha256(
+                json.dumps(
+                    sorted([list(key) for key in selected_registered_keys]),
+                    ensure_ascii=False,
+                ).encode("utf-8")
+            ).hexdigest()[:12]
+            st.caption(
+                "删除注册信息不会自动删除该裁判已经提交的评分数据。"
+            )
+            confirm_judge_delete = st.checkbox(
+                f"确认删除选中的 {len(selected_registered_keys)} 位注册裁判",
+                key=f"confirm_registered_judge_delete_{registered_delete_signature}",
+            )
+            if st.button(
+                "🗑️ 删除选中注册裁判",
+                use_container_width=True,
+                disabled=not selected_registered_keys or not confirm_judge_delete,
+            ):
+                try:
+                    removed_count = delete_judges(selected_registered_keys)
+                except ScorePersistenceError as exc:
+                    st.error(f"裁判删除失败：{exc}")
+                else:
+                    st.session_state.admin_notice = (
+                        f"已删除 {removed_count} 条裁判注册信息"
+                    )
+                    st.rerun()
+        elif judges == []:
+            st.info("暂无注册裁判")
+
+        st.markdown("---")
+        st.markdown("##### 删除已有评分数据")
+        if not all_groups_loaded:
+            st.warning("部分评分组读取失败，不能执行评分数据删除")
+        elif not judge_summaries:
+            st.info("暂无评分数据")
+        else:
+            score_delete_rows = [
+                {
+                    "删除": False,
+                    "裁判姓名": summary["judge_name"],
+                    "裁判编号": summary["judge_id"],
+                    "评分组": "、".join(summary["groups"]),
+                    "记录数": summary["record_count"],
+                    "最近评分": summary["last_time"],
+                }
+                for summary in judge_summaries
+            ]
+            score_delete_frame = pd.DataFrame(score_delete_rows)
+            edited_score_delete = st.data_editor(
+                score_delete_frame,
+                column_config={
+                    "删除": st.column_config.CheckboxColumn("删除", default=False),
+                    "裁判姓名": st.column_config.TextColumn("裁判姓名"),
+                    "裁判编号": st.column_config.TextColumn("裁判编号"),
+                    "评分组": st.column_config.TextColumn("评分组"),
+                    "记录数": st.column_config.NumberColumn("记录数"),
+                    "最近评分": st.column_config.TextColumn("最近评分"),
+                },
+                disabled=[
+                    column for column in score_delete_frame.columns if column != "删除"
+                ],
+                hide_index=True,
+                use_container_width=True,
+                key="admin_score_data_delete_selector",
+            )
+            selected_score_judge_keys = {
+                _judge_identity(row["裁判姓名"], row["裁判编号"])
+                for _, row in edited_score_delete.loc[
+                    edited_score_delete["删除"].fillna(False)
+                ].iterrows()
+            }
+            selected_score_summaries = [
+                summary
+                for summary in judge_summaries
+                if _judge_identity(summary["judge_name"], summary["judge_id"])
+                in selected_score_judge_keys
+            ]
+            record_ids_by_group = {}
+            for summary in selected_score_summaries:
+                for group, records in summary["records_by_group"].items():
+                    record_ids_by_group.setdefault(group, []).extend(
+                        str(record.get("record_id", ""))
+                        for record in records
+                        if record.get("record_id")
+                    )
+            selected_score_count = sum(
+                len(record_ids) for record_ids in record_ids_by_group.values()
+            )
+            score_delete_signature = hashlib.sha256(
+                json.dumps(
+                    {
+                        group: sorted(record_ids)
+                        for group, record_ids in sorted(record_ids_by_group.items())
+                    },
+                    ensure_ascii=False,
+                    sort_keys=True,
+                ).encode("utf-8")
+            ).hexdigest()[:12]
+            st.caption("评分记录删除后不会在系统中自动恢复，请先导出需要的备份。")
+            confirm_score_delete = st.checkbox(
+                f"确认删除选中裁判的 {selected_score_count} 条评分记录",
+                key=f"confirm_score_data_delete_{score_delete_signature}",
+            )
+            if st.button(
+                "🗑️ 删除选中裁判的全部评分数据",
+                use_container_width=True,
+                disabled=not selected_score_count or not confirm_score_delete,
+            ):
+                try:
+                    delete_result = delete_score_records(record_ids_by_group)
+                except ScorePersistenceError as exc:
+                    st.error(f"评分数据删除失败：{exc}")
+                else:
+                    st.session_state.pop("selected_judge_export", None)
+                    st.session_state.admin_notice = (
+                        f"已删除 {delete_result['deleted_count']} 条评分记录"
+                    )
+                    if delete_result["cleanup_warnings"]:
+                        st.session_state.admin_warning = (
+                            "删除标记已生效，但部分历史文件物理清理失败："
+                            + "；".join(delete_result["cleanup_warnings"])
+                        )
+                    st.rerun()
 
     # 登出管理
     if st.button("🔒 退出管理", use_container_width=True):

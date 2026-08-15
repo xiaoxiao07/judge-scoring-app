@@ -20,7 +20,7 @@ from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 
 from .scoring import get_criteria, get_total_score, get_groups, normalize_group
 
-MODULE_VERSION = "2026-08-15-selective-export-v1"
+MODULE_VERSION = "2026-08-15-admin-delete-v1"
 
 # 数据目录
 DATA_DIR = Path(__file__).parent.parent / "data"
@@ -33,6 +33,11 @@ SCORE_FILES = {
     "答辩组": DATA_DIR / "scores_线上答辩.json",
     "实操组": DATA_DIR / "scores_甘肃线下实操.json",
 }
+
+# 删除标记保存在 score-data 分支；即使 main 或其他实例仍有旧缓存，
+# 被删除的评分记录也不会在后续合并时重新出现。
+SCORE_DELETIONS_FILE = DATA_DIR / "score_deletions.json"
+SCORE_DELETIONS_REPO_PATH = "data/score_deletions.json"
 
 # GitHub 仓库信息。评分数据写入独立分支，避免每次提交触发应用重新部署。
 GITHUB_REPO = "xiaoxiao07/judge-scoring-app"
@@ -213,6 +218,50 @@ def _merge_score_records(*record_sets: list) -> list:
     return merged
 
 
+def _normalize_score_deletions(deletions: list) -> list:
+    """规范化删除标记，并按（评分组、提交ID）去重。"""
+    normalized = []
+    seen = set()
+    for source_marker in deletions or []:
+        if not isinstance(source_marker, dict):
+            continue
+        record_id = str(source_marker.get("record_id", "")).strip()
+        group = normalize_group(str(source_marker.get("group", "")).strip())
+        if not record_id or group not in SCORE_FILES:
+            continue
+        key = (group, record_id)
+        if key in seen:
+            continue
+        marker = dict(source_marker)
+        marker["group"] = group
+        marker["record_id"] = record_id
+        normalized.append(marker)
+        seen.add(key)
+    return normalized
+
+
+def _score_deletion_keys(deletions: list) -> set:
+    return {
+        (marker["group"], marker["record_id"])
+        for marker in _normalize_score_deletions(deletions)
+    }
+
+
+def _filter_deleted_score_records(group: str, records: list, deletions: list) -> list:
+    """过滤已删除记录；返回值始终带稳定 record_id。"""
+    normalized_group = normalize_group(group)
+    deleted_ids = {
+        record_id
+        for marker_group, record_id in _score_deletion_keys(deletions)
+        if marker_group == normalized_group
+    }
+    return [
+        record
+        for record in _ensure_record_ids(records or [])
+        if record.get("record_id") not in deleted_ids
+    ]
+
+
 def _fetch_github_records(repo_path: str, branch: str, token: str = "") -> dict:
     """读取指定分支上的 JSON 记录文件，并返回内容及用于 CAS 的 SHA。"""
     url = f"{GITHUB_API_BASE}/contents/{repo_path}"
@@ -319,14 +368,15 @@ def _put_github_records(
     sha: Optional[str],
     token: str,
     commit_msg: str,
+    branch: str = GITHUB_DATA_BRANCH,
 ) -> dict:
-    """使用当前文件 SHA 更新 score-data 分支；SHA 不匹配时由上层重新合并重试。"""
+    """使用当前文件 SHA 更新指定分支；SHA 不匹配时由上层重试。"""
     url = f"{GITHUB_API_BASE}/contents/{repo_path}"
     content = json.dumps(records, ensure_ascii=False, indent=2)
     payload = {
         "message": commit_msg,
         "content": base64.b64encode(content.encode("utf-8")).decode("utf-8"),
-        "branch": GITHUB_DATA_BRANCH,
+        "branch": branch,
     }
     if sha:
         payload["sha"] = sha
@@ -393,6 +443,145 @@ def _ensure_data_branch(token: str) -> tuple[bool, str]:
         return False, f"检查数据分支异常：{exc}"
 
 
+def _compact_score_records_on_branch(
+    group: str,
+    branch: str,
+    deletions: list,
+    token: str,
+) -> str:
+    """从指定分支的活动评分文件中移除已标记记录，返回空串表示成功。"""
+    normalized_group = normalize_group(group)
+    repo_path = f"data/{SCORE_FILES[normalized_group].name}"
+    last_error = "评分文件清理未完成"
+    for attempt in range(GITHUB_SYNC_RETRIES):
+        snapshot = _fetch_github_records(repo_path, branch, token)
+        if not snapshot["ok"]:
+            last_error = snapshot["error"]
+            _sleep_for_retry(attempt)
+            continue
+        current_records = _ensure_record_ids(snapshot["records"])
+        remaining_records = _filter_deleted_score_records(
+            normalized_group,
+            current_records,
+            deletions,
+        )
+        if len(remaining_records) == len(current_records):
+            return ""
+        result = _put_github_records(
+            repo_path,
+            remaining_records,
+            snapshot["sha"],
+            token,
+            f"Admin: remove deleted {normalized_group} score records",
+            branch=branch,
+        )
+        if result["ok"]:
+            return ""
+        last_error = result["error"]
+        if not result["conflict"]:
+            break
+        _sleep_for_retry(attempt)
+    return last_error
+
+
+def delete_score_records(record_ids_by_group: dict) -> dict:
+    """永久隐藏并清理选中的评分记录；删除标记使用 SHA 条件更新。"""
+    target_keys = set()
+    for group, record_ids in (record_ids_by_group or {}).items():
+        normalized_group = normalize_group(group)
+        if normalized_group not in SCORE_FILES:
+            continue
+        for record_id in record_ids or []:
+            normalized_id = str(record_id).strip()
+            if normalized_id:
+                target_keys.add((normalized_group, normalized_id))
+    if not target_keys:
+        return {"deleted_count": 0, "cleanup_warnings": []}
+
+    token = _get_github_token()
+    if not token:
+        raise ScorePersistenceError("未配置 GITHUB_TOKEN，无法删除云端评分记录")
+    branch_ok, branch_error = _ensure_data_branch(token)
+    if not branch_ok:
+        raise ScorePersistenceError(branch_error)
+
+    with _SCORE_DATA_LOCK:
+        committed_deletions = None
+        last_error = "删除标记写入未完成"
+        for attempt in range(GITHUB_SYNC_RETRIES):
+            snapshot = _fetch_github_records(
+                SCORE_DELETIONS_REPO_PATH,
+                GITHUB_DATA_BRANCH,
+                token,
+            )
+            if not snapshot["ok"]:
+                last_error = snapshot["error"]
+                _sleep_for_retry(attempt)
+                continue
+            current_deletions = _normalize_score_deletions(snapshot["records"])
+            current_keys = _score_deletion_keys(current_deletions)
+            new_markers = [
+                {
+                    "group": group,
+                    "record_id": record_id,
+                    "deleted_at_utc": datetime.now(timezone.utc).isoformat(
+                        timespec="milliseconds"
+                    ),
+                    "deleted_by": "admin",
+                }
+                for group, record_id in sorted(target_keys - current_keys)
+            ]
+            candidate = current_deletions + new_markers
+            if not new_markers:
+                committed_deletions = candidate
+                break
+            result = _put_github_records(
+                SCORE_DELETIONS_REPO_PATH,
+                candidate,
+                snapshot["sha"],
+                token,
+                f"Admin: mark {len(new_markers)} score records deleted",
+                branch=GITHUB_DATA_BRANCH,
+            )
+            if result["ok"]:
+                committed_deletions = candidate
+                break
+            last_error = result["error"]
+            if not result["conflict"]:
+                break
+            _sleep_for_retry(attempt)
+
+        if committed_deletions is None:
+            raise ScorePersistenceError(last_error)
+
+        _write_json(SCORE_DELETIONS_FILE, committed_deletions)
+        cleanup_warnings = []
+        affected_groups = sorted({group for group, _ in target_keys})
+        for group in affected_groups:
+            for branch in (GITHUB_DATA_BRANCH, GITHUB_BRANCH):
+                cleanup_error = _compact_score_records_on_branch(
+                    group,
+                    branch,
+                    committed_deletions,
+                    token,
+                )
+                if cleanup_error:
+                    cleanup_warnings.append(f"{group}/{branch}：{cleanup_error}")
+
+            file_path = SCORE_FILES[group]
+            local_records = _filter_deleted_score_records(
+                group,
+                _read_json(file_path),
+                committed_deletions,
+            )
+            _write_json(file_path, local_records)
+
+        return {
+            "deleted_count": len(target_keys),
+            "cleanup_warnings": cleanup_warnings,
+        }
+
+
 def _sleep_for_retry(attempt: int):
     time.sleep(min(0.05 * (attempt + 1), 0.5))
 
@@ -404,7 +593,7 @@ def _persist_score_records_to_github(
 ) -> tuple[bool, list, str]:
     """
     将本地记录与 score-data、main 两个分支合并后以 SHA 条件更新。
-    并发冲突会重新读取、合并并重试，成功返回表示远端已确认包含该提交。
+    并发冲突会重新读取、合并并重试；删除标记优先于所有旧缓存。
     """
     token = _get_github_token()
     if not token:
@@ -421,21 +610,40 @@ def _persist_score_records_to_github(
     for attempt in range(GITHUB_SYNC_RETRIES):
         primary = _fetch_github_records(repo_path, GITHUB_DATA_BRANCH, token)
         legacy = _fetch_github_records(repo_path, GITHUB_BRANCH, token)
-        if not primary["ok"] or not legacy["ok"]:
-            last_error = primary["error"] or legacy["error"]
+        deletion_snapshot = _fetch_github_records(
+            SCORE_DELETIONS_REPO_PATH,
+            GITHUB_DATA_BRANCH,
+            token,
+        )
+        if not primary["ok"] or not legacy["ok"] or not deletion_snapshot["ok"]:
+            last_error = (
+                primary["error"]
+                or legacy["error"]
+                or deletion_snapshot["error"]
+            )
             _sleep_for_retry(attempt)
             continue
 
-        candidate = _merge_score_records(
-            primary["records"],
-            legacy["records"],
-            local_records,
+        deletions = _normalize_score_deletions(deletion_snapshot["records"])
+        _write_json(SCORE_DELETIONS_FILE, deletions)
+        candidate = _filter_deleted_score_records(
+            group,
+            _merge_score_records(
+                primary["records"],
+                legacy["records"],
+                local_records,
+            ),
+            deletions,
         )
         candidate_ids = {record["record_id"] for record in candidate}
         if required_record_id not in candidate_ids:
-            return False, local_records, "待保存记录未进入合并结果"
+            return False, candidate, "该提交已被管理员删除，不能通过旧页面重新写入"
 
-        primary_records = _ensure_record_ids(primary["records"])
+        primary_records = _filter_deleted_score_records(
+            group,
+            primary["records"],
+            deletions,
+        )
         primary_ids = {record["record_id"] for record in primary_records}
         if candidate_ids.issubset(primary_ids):
             return True, _merge_score_records(primary_records, candidate), ""
@@ -455,12 +663,22 @@ def _persist_score_records_to_github(
             break
         _sleep_for_retry(attempt)
 
-    # 处理“远端已成功但客户端响应丢失”的情况：最终再读取一次确认全部本地记录。
     final_snapshot = _fetch_github_records(repo_path, GITHUB_DATA_BRANCH, token)
-    if final_snapshot["ok"]:
-        remote_records = _ensure_record_ids(final_snapshot["records"])
+    final_deletions = _fetch_github_records(
+        SCORE_DELETIONS_REPO_PATH,
+        GITHUB_DATA_BRANCH,
+        token,
+    )
+    if final_snapshot["ok"] and final_deletions["ok"]:
+        deletions = _normalize_score_deletions(final_deletions["records"])
+        remote_records = _filter_deleted_score_records(
+            group,
+            final_snapshot["records"],
+            deletions,
+        )
         remote_ids = {record["record_id"] for record in remote_records}
-        local_ids = {record["record_id"] for record in _ensure_record_ids(local_records)}
+        allowed_local = _filter_deleted_score_records(group, local_records, deletions)
+        local_ids = {record["record_id"] for record in allowed_local}
         if required_record_id in remote_ids and local_ids.issubset(remote_ids):
             return True, remote_records, ""
 
@@ -468,7 +686,7 @@ def _persist_score_records_to_github(
 
 
 def refresh_score_cache(group: str, require_remote: bool = False) -> list:
-    """合并 score-data、main 和本地缓存，供历史页与后台完整导出。"""
+    """合并远端与本地缓存，并优先过滤管理员删除的记录。"""
     normalized_group = normalize_group(group)
     file_path = SCORE_FILES.get(normalized_group)
     if not file_path:
@@ -480,9 +698,31 @@ def refresh_score_cache(group: str, require_remote: bool = False) -> list:
         local_records = _read_json(file_path)
         primary = _fetch_github_records(repo_path, GITHUB_DATA_BRANCH, token)
         legacy = _fetch_github_records(repo_path, GITHUB_BRANCH, token)
-        if require_remote and (not primary["ok"] or not legacy["ok"]):
-            detail = primary["error"] or legacy["error"] or "远端历史记录读取失败"
+        deletion_snapshot = _fetch_github_records(
+            SCORE_DELETIONS_REPO_PATH,
+            GITHUB_DATA_BRANCH,
+            token,
+        )
+        if require_remote and (
+            not primary["ok"]
+            or not legacy["ok"]
+            or not deletion_snapshot["ok"]
+        ):
+            detail = (
+                primary["error"]
+                or legacy["error"]
+                or deletion_snapshot["error"]
+                or "远端历史记录读取失败"
+            )
             raise ScorePersistenceError(detail)
+
+        if deletion_snapshot["ok"]:
+            deletions = _normalize_score_deletions(deletion_snapshot["records"])
+            _write_json(SCORE_DELETIONS_FILE, deletions)
+        else:
+            deletions = _normalize_score_deletions(
+                _read_json(SCORE_DELETIONS_FILE)
+            )
 
         record_sets = []
         if primary["ok"]:
@@ -490,7 +730,11 @@ def refresh_score_cache(group: str, require_remote: bool = False) -> list:
         if legacy["ok"]:
             record_sets.append(legacy["records"])
         record_sets.append(local_records)
-        merged = _merge_score_records(*record_sets)
+        merged = _filter_deleted_score_records(
+            normalized_group,
+            _merge_score_records(*record_sets),
+            deletions,
+        )
         _write_json(file_path, merged)
         return merged
 
@@ -504,6 +748,8 @@ def init_data_files():
         DATA_DIR.mkdir(parents=True, exist_ok=True)
         if not JUDGES_FILE.exists():
             _write_json(JUDGES_FILE, [])
+        if not SCORE_DELETIONS_FILE.exists():
+            _write_json(SCORE_DELETIONS_FILE, [])
         for group in get_groups():
             if group in SCORE_FILES and not SCORE_FILES[group].exists():
                 _write_json(SCORE_FILES[group], [])
@@ -519,25 +765,68 @@ def init_data_files():
 
 
 def register_judge(name: str, judge_id: str, group: str) -> dict:
-    """注册裁判（如已存在则更新），返回裁判信息字典。"""
-    judges = _read_json(JUDGES_FILE)
-    for judge in judges:
-        if judge["judge_id"] == judge_id:
-            judge["name"] = name
-            judge["group"] = group
-            _write_json(JUDGES_FILE, judges)
-            return judge
+    """注册或更新裁判；有令牌时使用 SHA 条件更新避免覆盖并发删除。"""
+    normalized_group = normalize_group(group)
+    judge_token = hashlib.sha256(f"{name}|{judge_id}".encode()).hexdigest()[:12]
 
-    token = hashlib.sha256(f"{name}|{judge_id}".encode()).hexdigest()[:12]
-    judge_info = {
-        "name": name,
-        "judge_id": judge_id,
-        "group": group,
-        "token": token,
-    }
-    judges.append(judge_info)
+    def upsert(judges: list) -> tuple[list, dict, bool]:
+        normalized_judges = [item for item in judges if isinstance(item, dict)]
+        for judge in normalized_judges:
+            if str(judge.get("judge_id", "")) == str(judge_id):
+                changed = (
+                    judge.get("name") != name
+                    or normalize_group(judge.get("group", "")) != normalized_group
+                    or not judge.get("token")
+                )
+                judge["name"] = name
+                judge["judge_id"] = judge_id
+                judge["group"] = normalized_group
+                if not judge.get("token"):
+                    judge["token"] = judge_token
+                return normalized_judges, judge, changed
+        judge_info = {
+            "name": name,
+            "judge_id": judge_id,
+            "group": normalized_group,
+            "token": judge_token,
+        }
+        normalized_judges.append(judge_info)
+        return normalized_judges, judge_info, True
+
+    token = _get_github_token()
+    if token:
+        with _SCORE_DATA_LOCK:
+            for attempt in range(GITHUB_SYNC_RETRIES):
+                snapshot = _fetch_github_records(
+                    "data/judges.json",
+                    GITHUB_BRANCH,
+                    token,
+                )
+                if not snapshot["ok"]:
+                    _sleep_for_retry(attempt)
+                    continue
+                judges, judge_info, changed = upsert(snapshot["records"])
+                if not changed:
+                    _write_json(JUDGES_FILE, judges)
+                    return judge_info
+                result = _put_github_records(
+                    "data/judges.json",
+                    judges,
+                    snapshot["sha"],
+                    token,
+                    f"Judge-sync: register or update {judge_id}",
+                    branch=GITHUB_BRANCH,
+                )
+                if result["ok"]:
+                    _write_json(JUDGES_FILE, judges)
+                    return judge_info
+                if not result["conflict"]:
+                    break
+                _sleep_for_retry(attempt)
+
+    # 无令牌或远端暂不可用时保留原有本地登录能力，但不覆盖远端最新列表。
+    judges, judge_info, _ = upsert(_read_json(JUDGES_FILE))
     _write_json(JUDGES_FILE, judges)
-    _sync_judges_to_github()
     return judge_info
 
 
@@ -557,9 +846,93 @@ def find_judge_by_id(judge_id: str) -> Optional[dict]:
     return None
 
 
-def get_all_judges() -> list:
-    """获取所有已注册裁判。"""
+def get_all_judges(
+    refresh_remote: bool = False,
+    require_remote: bool = False,
+) -> list:
+    """获取已注册裁判；管理页可要求远端读取必须成功。"""
+    if refresh_remote:
+        snapshot = _fetch_github_records(
+            "data/judges.json",
+            GITHUB_BRANCH,
+            _get_github_token(),
+        )
+        if snapshot["ok"]:
+            judges = [item for item in snapshot["records"] if isinstance(item, dict)]
+            _write_json(JUDGES_FILE, judges)
+            return judges
+        if require_remote:
+            raise ScorePersistenceError(snapshot["error"] or "远端裁判列表读取失败")
     return _read_json(JUDGES_FILE)
+
+
+def delete_judges(judge_keys: list) -> int:
+    """按（裁判姓名、裁判编号）删除注册信息，不自动删除评分记录。"""
+    targets = {
+        (str(name).strip(), str(judge_id).strip())
+        for name, judge_id in (judge_keys or [])
+        if str(name).strip() or str(judge_id).strip()
+    }
+    if not targets:
+        return 0
+    token = _get_github_token()
+    if not token:
+        raise ScorePersistenceError("未配置 GITHUB_TOKEN，无法删除云端裁判信息")
+
+    with _SCORE_DATA_LOCK:
+        last_error = "裁判信息删除未完成"
+        for attempt in range(GITHUB_SYNC_RETRIES):
+            snapshot = _fetch_github_records(
+                "data/judges.json",
+                GITHUB_BRANCH,
+                token,
+            )
+            if not snapshot["ok"]:
+                last_error = snapshot["error"]
+                _sleep_for_retry(attempt)
+                continue
+            current_judges = [
+                item for item in snapshot["records"] if isinstance(item, dict)
+            ]
+            remaining = [
+                judge
+                for judge in current_judges
+                if (
+                    str(judge.get("name", "")).strip(),
+                    str(judge.get("judge_id", "")).strip(),
+                )
+                not in targets
+            ]
+            removed_count = len(current_judges) - len(remaining)
+            if removed_count == 0:
+                local_remaining = [
+                    judge
+                    for judge in _read_json(JUDGES_FILE)
+                    if (
+                        str(judge.get("name", "")).strip(),
+                        str(judge.get("judge_id", "")).strip(),
+                    )
+                    not in targets
+                ]
+                _write_json(JUDGES_FILE, local_remaining)
+                return 0
+            result = _put_github_records(
+                "data/judges.json",
+                remaining,
+                snapshot["sha"],
+                token,
+                f"Admin: delete {removed_count} registered judges",
+                branch=GITHUB_BRANCH,
+            )
+            if result["ok"]:
+                _write_json(JUDGES_FILE, remaining)
+                return removed_count
+            last_error = result["error"]
+            if not result["conflict"]:
+                break
+            _sleep_for_retry(attempt)
+
+    raise ScorePersistenceError(last_error)
 
 
 # ===================== 评分记录管理 =====================
@@ -648,7 +1021,7 @@ def save_score(
                 f"云端未确认保存，系统没有显示成功：{error}。请保持当前页面并重试"
             )
 
-        confirmed_records = _merge_score_records(confirmed_records, local_records)
+        confirmed_records = _ensure_record_ids(confirmed_records)
         _write_json(file_path, confirmed_records)
         return next(
             confirmed
@@ -670,7 +1043,12 @@ def get_all_scores(
     if refresh_remote:
         return refresh_score_cache(normalized_group, require_remote=require_remote)
     with _SCORE_DATA_LOCK:
-        records = _ensure_record_ids(_read_json(file_path))
+        deletions = _normalize_score_deletions(_read_json(SCORE_DELETIONS_FILE))
+        records = _filter_deleted_score_records(
+            normalized_group,
+            _read_json(file_path),
+            deletions,
+        )
         _write_json(file_path, records)
         return records
 
