@@ -1,0 +1,25 @@
+[
+  {
+    "record_id": "806ce2991f82461f9f740ff389f3f5b4",
+    "judge_name": "oul",
+    "judge_id": "161",
+    "judge_group": "北京线上实操组",
+    "contestant_id": "0000",
+    "contestant_group": "本科研究生组",
+    "scores": {
+      "推理过程展示": 6,
+      "任务一": 12,
+      "任务二": 12,
+      "视觉流程": 8,
+      "格式数值输出": 12,
+      "数据接收": 8,
+      "偏移与复位": 12
+    },
+    "total_score": 70,
+    "raw_score": 70,
+    "total_max": 70,
+    "timestamp": "2026-08-15 23:54:11",
+    "saved_at_utc": "2026-08-15T23:54:11.046+00:00",
+    "duration": "0"
+  }
+]
