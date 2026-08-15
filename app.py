@@ -2,7 +2,7 @@
 裁判评分系统 — Streamlit 主程序
 
 裁判通过手机浏览器访问，进行评分操作。
-支持答辩组和实操组两类裁判，自动保存评分记录到 JSON，
+支持答辩组、实操组和北京线上实操组三类裁判，自动保存评分记录到 JSON，
 并支持导出为 Excel 格式。
 
 部署方式：Streamlit Community Cloud
@@ -22,7 +22,7 @@ from utils import auth as _auth_module
 from utils import data_manager as _data_manager_module
 from utils import scoring as _scoring_module
 
-if getattr(_data_manager_module, "MODULE_VERSION", "") != "2026-08-15-admin-delete-v1":
+if getattr(_data_manager_module, "MODULE_VERSION", "") != "2026-08-15-beijing-online-v1":
     _scoring_module = importlib.reload(_scoring_module)
     _data_manager_module = importlib.reload(_data_manager_module)
     _auth_module = importlib.reload(_auth_module)
@@ -42,6 +42,7 @@ from utils.scoring import (
     get_groups,
     get_total_score,
     get_veto,
+    is_practical_group,
 )
 from utils.data_manager import (
     ScorePersistenceError,
@@ -530,9 +531,9 @@ def render_scoring_page(judge: dict):
         key=f"contestant_group_{submit_round}",
     )
 
-    # 实操组必须保留并记录评分表中的完成时间 T
+    # 实操类组别必须保留并记录评分表中的完成时间 T
     duration = ""
-    if group == "实操组":
+    if is_practical_group(group):
         with st.container(border=True):
             name_col, value_col = st.columns([2, 5])
             with name_col:
@@ -555,8 +556,8 @@ def render_scoring_page(judge: dict):
     score_override_notes = []
     st.markdown("#### 评分项")
 
-    if group == "实操组":
-        # 实操组：表格式选钮评分 + 扣分项 + 否决项
+    if is_practical_group(group):
+        # 实操类组别：表格式选钮评分 + 扣分项 + 否决项
         modules = {}
         for name, info in criteria.items():
             module = info.get("module", "其他")
@@ -680,15 +681,19 @@ def render_scoring_page(judge: dict):
                                 unsafe_allow_html=True,
                             )
                         with value_col:
+                            inactive_label = ded_info.get("inactive_label", "未使用")
+                            active_label = ded_info.get(
+                                "active_label", f"使用（扣{deduct_val}分）"
+                            )
                             binary_choice = st.radio(
                                 label=ded_name,
-                                options=["未使用", f"使用（扣{deduct_val}分）"],
+                                options=[inactive_label, active_label],
                                 index=0,
                                 horizontal=True,
                                 key=f"ded_choice_{ded_name}_{submit_round}",
                                 label_visibility="collapsed",
                             )
-                    if binary_choice != "未使用":
+                    if binary_choice != inactive_label:
                         deductions_applied[ded_name] = deduct_val
 
                 elif mode == "score_zero":
@@ -712,11 +717,12 @@ def render_scoring_page(judge: dict):
                         deductions_applied[ded_name] = "总分记0分"
                         score_zero_items.append(ded_name)
 
-            scores, score_override_notes = apply_practical_score_overrides(
-                scores,
-                auxiliary_task_card=auxiliary_task_card,
-                assembly_intervened=assembly_intervened,
-            )
+            if group == "实操组":
+                scores, score_override_notes = apply_practical_score_overrides(
+                    scores,
+                    auxiliary_task_card=auxiliary_task_card,
+                    assembly_intervened=assembly_intervened,
+                )
             deduction_total = sum(
                 value
                 for value in deductions_applied.values()
@@ -825,7 +831,7 @@ def render_scoring_page(judge: dict):
             st.error("请输入被评分选手的编号或姓名")
         elif not contestant_group:
             st.error("请选择选手组别")
-        elif group == "实操组" and not duration.strip():
+        elif is_practical_group(group) and not duration.strip():
             st.error("请输入完成时间 T")
         else:
             submission_payload = {
@@ -839,7 +845,7 @@ def render_scoring_page(judge: dict):
                 "veto_items": veto_triggered_items,
                 "score_zero_items": score_zero_items,
                 "score_overrides": score_override_notes,
-                "duration": duration.strip() if group == "实操组" else "",
+                "duration": duration.strip() if is_practical_group(group) else "",
             }
             submission_fingerprint = hashlib.sha256(
                 json.dumps(
@@ -872,7 +878,7 @@ def render_scoring_page(judge: dict):
                     score_zero_triggered=score_zero_triggered,
                     score_zero_items=score_zero_items if score_zero_items else None,
                     score_overrides=score_override_notes if score_override_notes else None,
-                    duration=duration.strip() if group == "实操组" else None,
+                    duration=duration.strip() if is_practical_group(group) else None,
                     record_id=pending_submission["record_id"],
                     contestant_group=contestant_group,
                 )

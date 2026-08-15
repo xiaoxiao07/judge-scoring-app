@@ -18,9 +18,15 @@ import openpyxl
 import requests
 from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 
-from .scoring import get_criteria, get_total_score, get_groups, normalize_group
+from .scoring import (
+    get_criteria,
+    get_total_score,
+    get_groups,
+    is_practical_group,
+    normalize_group,
+)
 
-MODULE_VERSION = "2026-08-15-admin-delete-v1"
+MODULE_VERSION = "2026-08-15-beijing-online-v1"
 
 # 数据目录
 DATA_DIR = Path(__file__).parent.parent / "data"
@@ -32,6 +38,7 @@ JUDGES_FILE = DATA_DIR / "judges.json"
 SCORE_FILES = {
     "答辩组": DATA_DIR / "scores_线上答辩.json",
     "实操组": DATA_DIR / "scores_甘肃线下实操.json",
+    "北京线上实操组": DATA_DIR / "scores_北京线上实操.json",
 }
 
 # 删除标记保存在 score-data 分支；即使 main 或其他实例仍有旧缓存，
@@ -1115,9 +1122,9 @@ def export_records_to_excel(
     score_sheet.title = f"{normalized_group}评分记录"
 
     score_headers = [f"{key}({value['max']})" for key, value in criteria.items()]
-    is_practical = normalized_group == "实操组"
+    is_practical = is_practical_group(normalized_group)
     if is_practical:
-        # 实操组固定列：A 选手编号、B 选手组别、C/D 空列、E 总分、F 时间。
+        # 实操类组别固定列：A 选手编号、B 选手组别、C/D 空列、E 总分、F 时间。
         headers = [
             "选手编号",
             "选手组别",

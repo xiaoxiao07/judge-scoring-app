@@ -1,7 +1,7 @@
 """
 评分标准定义模块。
 
-对外仅提供“答辩组”和“实操组”两个裁判分组；旧名称仅用于兼容
+对外提供“答辩组”“实操组”和“北京线上实操组”；旧名称仅用于兼容
 已经保存的裁判信息和自动登录链接。
 """
 
@@ -214,10 +214,74 @@ PRACTICAL_VETO = {
     },
 }
 
-# 旧组名兼容映射。已删除的“线上实操”和“线下实操”不再映射。
+# 北京线上实操组评分标准（总分70分）
+# 依据桌面《仿真操作打分表-lx.xlsx》：12分项目按6个步骤、每步2分点选。
+BEIJING_MODEL_MODULE = "一、大模型智能体（30分）"
+BEIJING_VISION_MODULE = "二、VM视觉（20分）"
+BEIJING_ROBOT_MODULE = "三、机器人仿真（20分）"
+BEIJING_STEP_OPTIONS = list(range(0, 13, 2))
+
+BEIJING_ONLINE_CRITERIA = {
+    "推理过程展示": _score_item(
+        6, BEIJING_MODEL_MODULE, [0, 6]
+    ),
+    "任务一": _score_item(
+        12, BEIJING_MODEL_MODULE, BEIJING_STEP_OPTIONS
+    ),
+    "任务二": _score_item(
+        12, BEIJING_MODEL_MODULE, BEIJING_STEP_OPTIONS
+    ),
+    "视觉流程": _score_item(
+        8, BEIJING_VISION_MODULE, [0, 8]
+    ),
+    "格式数值输出": _score_item(
+        12, BEIJING_VISION_MODULE, BEIJING_STEP_OPTIONS
+    ),
+    "数据接收": _score_item(
+        8, BEIJING_ROBOT_MODULE, [0, 8]
+    ),
+    "偏移与复位": _score_item(
+        12, BEIJING_ROBOT_MODULE, BEIJING_STEP_OPTIONS
+    ),
+}
+
+BEIJING_ONLINE_DEDUCTIONS = {
+    "仿真动画展示不直观": {
+        "deduct": 8,
+        "mode": "binary_deduct",
+        "inactive_label": "未发生",
+        "active_label": "发生（扣8分）",
+    },
+    "初始位姿设置错误": {
+        "deduct": 5,
+        "mode": "binary_deduct",
+        "inactive_label": "未发生",
+        "active_label": "发生（扣5分）",
+    },
+    "屏幕共享没有设置时钟": {
+        "deduct": 10,
+        "mode": "binary_deduct",
+        "inactive_label": "未发生",
+        "active_label": "发生（扣10分）",
+    },
+}
+
+BEIJING_ONLINE_VETO = {
+    "纯文本硬编码伪装": {
+        "description": "大模型交互界面被证实为纯文本硬编码伪装",
+    },
+    "数据逻辑脱节/预设动画": {
+        "description": "VM输出数据与机器人动作逻辑脱节，或播放预设轨迹动画",
+    },
+}
+
+PRACTICAL_GROUPS = ("实操组", "北京线上实操组")
+
+# 旧组名兼容映射。“线上实操”沿用相同的70分规则进入北京线上实操组。
 GROUP_ALIASES = {
     "线上答辩": "答辩组",
     "甘肃线下实操": "实操组",
+    "线上实操": "北京线上实操组",
 }
 
 
@@ -226,16 +290,23 @@ def normalize_group(group: str) -> str:
     return GROUP_ALIASES.get(group, group)
 
 
+def is_practical_group(group: str) -> bool:
+    """判断组别是否使用实操评分、完成时间和实操导出格式。"""
+    return normalize_group(group) in PRACTICAL_GROUPS
+
+
 # 当前对外开放的组别映射
 GROUP_CRITERIA = {
     "答辩组": DEFENSE_CRITERIA,
     "实操组": PRACTICAL_CRITERIA,
+    "北京线上实操组": BEIJING_ONLINE_CRITERIA,
 }
 
 # 各组总分
 GROUP_TOTAL = {
     "答辩组": sum(c["max"] for c in DEFENSE_CRITERIA.values()),
     "实操组": sum(c["max"] for c in PRACTICAL_CRITERIA.values()),
+    "北京线上实操组": sum(c["max"] for c in BEIJING_ONLINE_CRITERIA.values()),
 }
 
 
@@ -256,13 +327,19 @@ def get_groups() -> list:
 
 def get_deductions(group: str) -> dict:
     """获取扣分项定义"""
-    if normalize_group(group) == "实操组":
+    normalized_group = normalize_group(group)
+    if normalized_group == "实操组":
         return PRACTICAL_DEDUCTIONS
+    if normalized_group == "北京线上实操组":
+        return BEIJING_ONLINE_DEDUCTIONS
     return {}
 
 
 def get_veto(group: str) -> dict:
     """获取否决项定义"""
-    if normalize_group(group) == "实操组":
+    normalized_group = normalize_group(group)
+    if normalized_group == "实操组":
         return PRACTICAL_VETO
+    if normalized_group == "北京线上实操组":
+        return BEIJING_ONLINE_VETO
     return {}
