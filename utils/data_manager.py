@@ -19,6 +19,7 @@ import requests
 from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 
 from .scoring import (
+    calculate_deduction_total,
     get_criteria,
     get_total_score,
     get_groups,
@@ -26,7 +27,7 @@ from .scoring import (
     normalize_group,
 )
 
-MODULE_VERSION = "2026-08-15-beijing-deductions-v2"
+MODULE_VERSION = "2026-08-15-beijing-deduction-caps-v3"
 
 # 数据目录
 DATA_DIR = Path(__file__).parent.parent / "data"
@@ -959,6 +960,7 @@ def save_score(
     duration: Optional[str] = None,
     record_id: Optional[str] = None,
     contestant_group: Optional[str] = None,
+    deduction_selections: Optional[dict] = None,
 ) -> dict:
     """
     保存一条评分记录。仅当 GitHub 已确认包含该 record_id 时返回成功；
@@ -1003,11 +1005,13 @@ def save_score(
                 record["duration"] = duration
             if deductions:
                 record["deductions"] = deductions
-                record["deduction_total"] = sum(
-                    value
-                    for value in deductions.values()
-                    if isinstance(value, (int, float))
+                record["deduction_total"] = calculate_deduction_total(
+                    group,
+                    scores,
+                    deductions,
                 )
+            if deduction_selections:
+                record["deduction_selections"] = deduction_selections
             if veto_triggered:
                 record["veto_triggered"] = True
                 record["veto_items"] = veto_items or []
@@ -1246,6 +1250,7 @@ def export_records_to_excel(
         "选手组别",
         "用时",
         "扣分明细",
+        "步骤扣分选择值",
         "自动归零说明",
         "总分归零",
         "总分归零项",
@@ -1271,6 +1276,7 @@ def export_records_to_excel(
             record.get("contestant_group", ""),
             record.get("duration", ""),
             _format_mapping(record.get("deductions")),
+            _format_mapping(record.get("deduction_selections")),
             _format_items(record.get("score_overrides")),
             "是" if record.get("score_zero_triggered") else "否",
             _format_items(record.get("score_zero_items")),

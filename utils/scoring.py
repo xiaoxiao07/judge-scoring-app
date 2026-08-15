@@ -269,16 +269,19 @@ BEIJING_ONLINE_DEDUCTIONS = {
         "deduct": 1,
         "mode": "inline_amount",
         "options": BEIJING_DEDUCTION_OPTIONS,
+        "score_target": "任务二",
     },
     "格式数据输出步骤扣分": {
         "deduct": 1,
         "mode": "inline_amount",
         "options": BEIJING_DEDUCTION_OPTIONS,
+        "score_target": "格式数值输出",
     },
     "偏移与复位步骤扣分": {
         "deduct": 1,
         "mode": "inline_amount",
         "options": BEIJING_DEDUCTION_OPTIONS,
+        "score_target": "偏移与复位",
     },
     "仿真动画展示不直观": {
         "deduct": 8,
@@ -372,6 +375,35 @@ def get_deductions(group: str) -> dict:
     if normalized_group == "北京线上实操组":
         return BEIJING_ONLINE_DEDUCTIONS
     return {}
+
+
+def calculate_deduction_total(group: str, scores: dict, deductions: dict):
+    """计算有效扣分；内嵌步骤扣分不能超过其对应得分项的当前得分。"""
+    deduction_definitions = get_deductions(group)
+    total = 0
+
+    for deduction_name, selected_amount in (deductions or {}).items():
+        if isinstance(selected_amount, bool) or not isinstance(
+            selected_amount, (int, float)
+        ):
+            continue
+
+        effective_amount = max(0, selected_amount)
+        definition = deduction_definitions.get(deduction_name, {})
+        if definition.get("mode") == "inline_amount":
+            score_target = definition.get("score_target")
+            target_score = (scores or {}).get(score_target, 0)
+            if isinstance(target_score, bool) or not isinstance(
+                target_score, (int, float)
+            ):
+                target_score = 0
+            effective_amount = min(effective_amount, max(0, target_score))
+
+        total += effective_amount
+
+    if isinstance(total, float) and total.is_integer():
+        return int(total)
+    return total
 
 
 def get_veto(group: str) -> dict:

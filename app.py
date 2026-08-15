@@ -22,7 +22,7 @@ from utils import auth as _auth_module
 from utils import data_manager as _data_manager_module
 from utils import scoring as _scoring_module
 
-if getattr(_data_manager_module, "MODULE_VERSION", "") != "2026-08-15-beijing-deductions-v2":
+if getattr(_data_manager_module, "MODULE_VERSION", "") != "2026-08-15-beijing-deduction-caps-v3":
     _scoring_module = importlib.reload(_scoring_module)
     _data_manager_module = importlib.reload(_data_manager_module)
     _auth_module = importlib.reload(_auth_module)
@@ -37,6 +37,7 @@ from utils.auth import (
 )
 from utils.scoring import (
     apply_practical_score_overrides,
+    calculate_deduction_total,
     get_criteria,
     get_deductions,
     get_groups,
@@ -591,6 +592,8 @@ def render_scoring_page(judge: dict):
     # 评分项
     scores = {}
     deductions_applied = {}
+    deduction_selections = {}
+    deduction_cap_notes = []
     deduction_total = 0
     score_zero_items = []
     score_override_notes = []
@@ -660,7 +663,21 @@ def render_scoring_page(judge: dict):
                                 submit_round,
                             )
                     if inline_penalty > 0:
-                        deductions_applied[inline_deduction_name] = inline_penalty
+                        deduction_selections[inline_deduction_name] = inline_penalty
+                        effective_inline_penalty = calculate_deduction_total(
+                            group,
+                            scores,
+                            {inline_deduction_name: inline_penalty},
+                        )
+                        if effective_inline_penalty > 0:
+                            deductions_applied[inline_deduction_name] = (
+                                effective_inline_penalty
+                            )
+                        if inline_penalty > effective_inline_penalty:
+                            deduction_cap_notes.append(
+                                f"{inline_deduction_name}实际扣"
+                                f"{effective_inline_penalty:g}分"
+                            )
 
         # 扣分项：次数类自动乘以单次扣分，规则类使用按钮选择
         auxiliary_task_card = ""
@@ -798,15 +815,21 @@ def render_scoring_page(judge: dict):
                     auxiliary_task_card=auxiliary_task_card,
                     assembly_intervened=assembly_intervened,
                 )
-            deduction_total = sum(
-                value
-                for value in deductions_applied.values()
-                if isinstance(value, (int, float))
+            deduction_total = calculate_deduction_total(
+                group,
+                scores,
+                deductions_applied,
             )
             if score_override_notes:
                 st.warning("自动归零：" + "；".join(score_override_notes))
-            if deduction_total > 0:
-                st.warning(f"扣分合计：{deduction_total} 分")
+            if deduction_total > 0 or deduction_cap_notes:
+                deduction_message = f"扣分合计：{deduction_total} 分"
+                if deduction_cap_notes:
+                    deduction_message += (
+                        "；步骤扣分按对应得分封顶："
+                        + "、".join(deduction_cap_notes)
+                    )
+                st.warning(deduction_message)
 
     else:
         # 答辩组：表格式按钮评分，列出 0 至满分的全部分值
@@ -916,6 +939,7 @@ def render_scoring_page(judge: dict):
                 "contestant_group": contestant_group,
                 "scores": scores,
                 "deductions": deductions_applied,
+                "deduction_selections": deduction_selections,
                 "final_score": final_total,
                 "veto_items": veto_triggered_items,
                 "score_zero_items": score_zero_items,
@@ -956,6 +980,9 @@ def render_scoring_page(judge: dict):
                     duration=duration.strip() if is_practical_group(group) else None,
                     record_id=pending_submission["record_id"],
                     contestant_group=contestant_group,
+                    deduction_selections=(
+                        deduction_selections if deduction_selections else None
+                    ),
                 )
             except ScorePersistenceError as exc:
                 st.error(f"❌ {exc}")
