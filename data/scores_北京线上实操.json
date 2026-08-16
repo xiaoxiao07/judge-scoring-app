@@ -1067,5 +1067,28 @@
       "屏幕共享没有设置时钟": 10
     },
     "deduction_total": 10
+  },
+  {
+    "record_id": "ecef233a948b4b52834564c9173f29a3",
+    "judge_name": "lhz",
+    "judge_id": "163",
+    "judge_group": "北京线上实操组",
+    "contestant_id": "3648",
+    "contestant_group": "本科研究生组",
+    "scores": {
+      "推理过程展示": 6,
+      "任务一": 12,
+      "任务二": 12,
+      "视觉流程": 8,
+      "格式数值输出": 12,
+      "数据接收": 8,
+      "偏移与复位": 0
+    },
+    "total_score": 58,
+    "raw_score": 58,
+    "total_max": 70,
+    "timestamp": "2026-08-16 06:58:47",
+    "saved_at_utc": "2026-08-16T06:58:47.929+00:00",
+    "duration": "250"
   }
 ]
