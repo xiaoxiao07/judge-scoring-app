@@ -872,5 +872,28 @@
       "初始位姿设置错误": 5
     },
     "deduction_total": 5
+  },
+  {
+    "record_id": "6e2b466fbb4945e9a3a5ba2cf0cc6f9c",
+    "judge_name": "lu",
+    "judge_id": "164",
+    "judge_group": "北京线上实操组",
+    "contestant_id": "3600",
+    "contestant_group": "本科研究生组",
+    "scores": {
+      "推理过程展示": 6,
+      "任务一": 12,
+      "任务二": 12,
+      "视觉流程": 8,
+      "格式数值输出": 12,
+      "数据接收": 8,
+      "偏移与复位": 6
+    },
+    "total_score": 64,
+    "raw_score": 64,
+    "total_max": 70,
+    "timestamp": "2026-08-16 06:54:38",
+    "saved_at_utc": "2026-08-16T06:54:38.345+00:00",
+    "duration": "228"
   }
 ]
