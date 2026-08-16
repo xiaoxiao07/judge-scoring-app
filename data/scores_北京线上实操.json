@@ -654,5 +654,35 @@
     "deduction_selections": {
       "偏移与复位步骤扣分": 5
     }
+  },
+  {
+    "record_id": "f05f76442c8c4bb89bd387da81d91442",
+    "judge_name": "long",
+    "judge_id": "161",
+    "judge_group": "北京线上实操组",
+    "contestant_id": "3055",
+    "contestant_group": "本科研究生组",
+    "scores": {
+      "推理过程展示": 6,
+      "任务一": 12,
+      "任务二": 12,
+      "视觉流程": 8,
+      "格式数值输出": 12,
+      "数据接收": 8,
+      "偏移与复位": 12
+    },
+    "total_score": 69,
+    "raw_score": 70,
+    "total_max": 70,
+    "timestamp": "2026-08-16 06:50:17",
+    "saved_at_utc": "2026-08-16T06:50:17.016+00:00",
+    "duration": "121",
+    "deductions": {
+      "偏移与复位步骤扣分": 1
+    },
+    "deduction_total": 1,
+    "deduction_selections": {
+      "偏移与复位步骤扣分": 1
+    }
   }
 ]
