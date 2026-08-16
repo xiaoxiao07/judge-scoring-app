@@ -346,5 +346,28 @@
     "deduction_selections": {
       "格式数据输出步骤扣分": 1
     }
+  },
+  {
+    "record_id": "ede42258d266486a93ba10c0469df722",
+    "judge_name": "chen",
+    "judge_id": "165",
+    "judge_group": "北京线上实操组",
+    "contestant_id": "3596",
+    "contestant_group": "本科研究生组",
+    "scores": {
+      "推理过程展示": 0,
+      "任务一": 0,
+      "任务二": 0,
+      "视觉流程": 0,
+      "格式数值输出": 0,
+      "数据接收": 0,
+      "偏移与复位": 0
+    },
+    "total_score": 0,
+    "raw_score": 0,
+    "total_max": 70,
+    "timestamp": "2026-08-16 06:41:48",
+    "saved_at_utc": "2026-08-16T06:41:48.595+00:00",
+    "duration": "300"
   }
 ]
