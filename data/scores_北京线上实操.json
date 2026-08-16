@@ -964,5 +964,35 @@
     "timestamp": "2026-08-16 06:56:23",
     "saved_at_utc": "2026-08-16T06:56:23.729+00:00",
     "duration": "317"
+  },
+  {
+    "record_id": "c3288d7d125b49d69643fb2cdbd5e992",
+    "judge_name": "lu",
+    "judge_id": "164",
+    "judge_group": "北京线上实操组",
+    "contestant_id": "3093",
+    "contestant_group": "本科研究生组",
+    "scores": {
+      "推理过程展示": 6,
+      "任务一": 12,
+      "任务二": 12,
+      "视觉流程": 8,
+      "格式数值输出": 12,
+      "数据接收": 8,
+      "偏移与复位": 10
+    },
+    "total_score": 67,
+    "raw_score": 68,
+    "total_max": 70,
+    "timestamp": "2026-08-16 06:56:49",
+    "saved_at_utc": "2026-08-16T06:56:49.792+00:00",
+    "duration": "147",
+    "deductions": {
+      "格式数据输出步骤扣分": 1
+    },
+    "deduction_total": 1,
+    "deduction_selections": {
+      "格式数据输出步骤扣分": 1
+    }
   }
 ]
