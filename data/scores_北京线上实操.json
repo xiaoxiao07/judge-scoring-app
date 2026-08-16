@@ -500,5 +500,28 @@
     "timestamp": "2026-08-16 06:46:47",
     "saved_at_utc": "2026-08-16T06:46:47.046+00:00",
     "duration": "86"
+  },
+  {
+    "record_id": "452745a80f214ea39a96f520f03084e8",
+    "judge_name": "long",
+    "judge_id": "161",
+    "judge_group": "北京线上实操组",
+    "contestant_id": "3595",
+    "contestant_group": "本科研究生组",
+    "scores": {
+      "推理过程展示": 0,
+      "任务一": 0,
+      "任务二": 0,
+      "视觉流程": 0,
+      "格式数值输出": 0,
+      "数据接收": 0,
+      "偏移与复位": 0
+    },
+    "total_score": 0,
+    "raw_score": 0,
+    "total_max": 70,
+    "timestamp": "2026-08-16 06:47:03",
+    "saved_at_utc": "2026-08-16T06:47:03.173+00:00",
+    "duration": "300"
   }
 ]
