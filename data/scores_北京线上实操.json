@@ -265,5 +265,33 @@
       "中断扣分": 5
     },
     "deduction_total": 15
+  },
+  {
+    "record_id": "0332645f68c443bda538c8eabe210ee4",
+    "judge_name": "chen",
+    "judge_id": "165",
+    "judge_group": "北京线上实操组",
+    "contestant_id": "2753",
+    "contestant_group": "本科研究生组",
+    "scores": {
+      "推理过程展示": 6,
+      "任务一": 12,
+      "任务二": 12,
+      "视觉流程": 0,
+      "格式数值输出": 0,
+      "数据接收": 8,
+      "偏移与复位": 12
+    },
+    "total_score": 32,
+    "raw_score": 50,
+    "total_max": 70,
+    "timestamp": "2026-08-16 05:21:10",
+    "saved_at_utc": "2026-08-16T05:21:10.598+00:00",
+    "duration": "205",
+    "deductions": {
+      "仿真动画展示不直观": 8,
+      "屏幕共享没有设置时钟": 10
+    },
+    "deduction_total": 18
   }
 ]
