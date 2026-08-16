@@ -237,5 +237,33 @@
       "格式数据输出步骤扣分": 6,
       "偏移与复位步骤扣分": 6
     }
+  },
+  {
+    "record_id": "09bec2b5018049b4bdbe791017748bd0",
+    "judge_name": "oul",
+    "judge_id": "161",
+    "judge_group": "北京线上实操组",
+    "contestant_id": "2623",
+    "contestant_group": "本科研究生组",
+    "scores": {
+      "推理过程展示": 6,
+      "任务一": 12,
+      "任务二": 0,
+      "视觉流程": 0,
+      "格式数值输出": 0,
+      "数据接收": 0,
+      "偏移与复位": 0
+    },
+    "total_score": 3,
+    "raw_score": 18,
+    "total_max": 70,
+    "timestamp": "2026-08-16 05:00:27",
+    "saved_at_utc": "2026-08-16T05:00:27.278+00:00",
+    "duration": "300",
+    "deductions": {
+      "屏幕共享没有设置时钟": 10,
+      "中断扣分": 5
+    },
+    "deduction_total": 15
   }
 ]
