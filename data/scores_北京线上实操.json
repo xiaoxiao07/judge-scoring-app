@@ -445,5 +445,37 @@
     "timestamp": "2026-08-16 06:45:45",
     "saved_at_utc": "2026-08-16T06:45:45.629+00:00",
     "duration": "238"
+  },
+  {
+    "record_id": "763d7e4f7aab424d8efee2fd8cf2c7bc",
+    "judge_name": "long",
+    "judge_id": "161",
+    "judge_group": "北京线上实操组",
+    "contestant_id": "2623",
+    "contestant_group": "本科研究生组",
+    "scores": {
+      "推理过程展示": 6,
+      "任务一": 12,
+      "任务二": 12,
+      "视觉流程": 0,
+      "格式数值输出": 0,
+      "数据接收": 0,
+      "偏移与复位": 0
+    },
+    "total_score": 3,
+    "raw_score": 30,
+    "total_max": 70,
+    "timestamp": "2026-08-16 06:46:26",
+    "saved_at_utc": "2026-08-16T06:46:26.342+00:00",
+    "duration": "300",
+    "deductions": {
+      "任务二步骤扣分": 12,
+      "屏幕共享没有设置时钟": 10,
+      "中断扣分": 5
+    },
+    "deduction_total": 27,
+    "deduction_selections": {
+      "任务二步骤扣分": 12
+    }
   }
 ]
