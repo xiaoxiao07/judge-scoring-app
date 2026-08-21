@@ -25,15 +25,18 @@ from .scoring import (
     get_groups,
     is_practical_group,
     normalize_group,
+    normalize_score_number,
 )
 
-MODULE_VERSION = "2026-08-15-beijing-deduction-caps-v3"
+MODULE_VERSION = "2026-08-21-defense-submit-v4"
 
 # 数据目录
 DATA_DIR = Path(__file__).parent.parent / "data"
 
-# 裁判信息文件
+# 裁判信息本地缓存；远端权威文件放在 score-data 分支，避免注册裁判触发应用重部署。
 JUDGES_FILE = DATA_DIR / "judges.json"
+JUDGES_DATA_REPO_PATH = "data/judges_registry.json"
+LEGACY_JUDGES_REPO_PATH = "data/judges.json"
 
 # 评分记录文件（沿用原文件名，保留已有评分数据）
 SCORE_FILES = {
@@ -145,12 +148,22 @@ def _sync_to_github(file_path: Path, repo_path: str, commit_msg: str) -> bool:
 
 
 def _sync_judges_to_github() -> bool:
-    """同步裁判信息到 GitHub。"""
-    return _sync_to_github(
-        JUDGES_FILE,
-        "data/judges.json",
-        "Auto-sync: update judges info",
+    """兼容入口：将裁判信息同步到 score-data，避免触发应用重部署。"""
+    token = _get_github_token()
+    if not token:
+        return False
+    snapshot = _get_judge_registry_snapshot(token, seed_if_missing=True)
+    if not snapshot["ok"]:
+        return False
+    result = _put_github_records(
+        JUDGES_DATA_REPO_PATH,
+        _read_json(JUDGES_FILE),
+        snapshot["sha"],
+        token,
+        "Judge-data: update registry",
+        branch=GITHUB_DATA_BRANCH,
     )
+    return result["ok"]
 
 
 def _read_json(file_path: Path) -> list:
@@ -451,6 +464,104 @@ def _ensure_data_branch(token: str) -> tuple[bool, str]:
         return False, f"检查数据分支异常：{exc}"
 
 
+def _ensure_remote_list_file(
+    repo_path: str,
+    initial_records: list,
+    token: str,
+    commit_message: str,
+) -> tuple[bool, str]:
+    """确保 score-data 上存在指定 JSON 列表文件，并安全处理并发首次创建。"""
+    last_error = "远端数据文件初始化未完成"
+    for attempt in range(GITHUB_SYNC_RETRIES):
+        snapshot = _fetch_github_records(repo_path, GITHUB_DATA_BRANCH, token)
+        if snapshot["ok"] and snapshot["exists"]:
+            return True, ""
+        if not snapshot["ok"]:
+            last_error = snapshot["error"]
+            _sleep_for_retry(attempt)
+            continue
+        result = _put_github_records(
+            repo_path,
+            initial_records or [],
+            None,
+            token,
+            commit_message,
+            branch=GITHUB_DATA_BRANCH,
+        )
+        if result["ok"]:
+            return True, ""
+        last_error = result["error"]
+        if not result["conflict"]:
+            break
+        _sleep_for_retry(attempt)
+    return False, last_error
+
+
+def _get_judge_registry_snapshot(
+    token: str = "",
+    seed_if_missing: bool = False,
+) -> dict:
+    """读取 score-data 裁判注册表；首次迁移时从 main 的旧文件安全播种。"""
+    if token:
+        branch_ok, branch_error = _ensure_data_branch(token)
+        if not branch_ok:
+            return {"ok": False, "records": [], "sha": None, "error": branch_error}
+
+    last_error = "裁判注册表读取失败"
+    attempts = GITHUB_SYNC_RETRIES if token and seed_if_missing else 1
+    for attempt in range(attempts):
+        primary = _fetch_github_records(
+            JUDGES_DATA_REPO_PATH,
+            GITHUB_DATA_BRANCH,
+            token,
+        )
+        if primary["ok"] and primary["exists"]:
+            return {
+                "ok": True,
+                "records": [item for item in primary["records"] if isinstance(item, dict)],
+                "sha": primary["sha"],
+                "error": "",
+            }
+        if not primary["ok"]:
+            last_error = primary["error"]
+            if attempt + 1 < attempts:
+                _sleep_for_retry(attempt)
+                continue
+            break
+
+        legacy = _fetch_github_records(
+            LEGACY_JUDGES_REPO_PATH,
+            GITHUB_BRANCH,
+            token,
+        )
+        if not legacy["ok"]:
+            last_error = legacy["error"]
+            if attempt + 1 < attempts:
+                _sleep_for_retry(attempt)
+                continue
+            break
+        judges = [item for item in legacy["records"] if isinstance(item, dict)]
+        if not token or not seed_if_missing:
+            return {"ok": True, "records": judges, "sha": None, "error": ""}
+
+        result = _put_github_records(
+            JUDGES_DATA_REPO_PATH,
+            judges,
+            None,
+            token,
+            "Judge-data: initialize registry",
+            branch=GITHUB_DATA_BRANCH,
+        )
+        if result["ok"]:
+            continue
+        last_error = result["error"]
+        if not result["conflict"]:
+            break
+        _sleep_for_retry(attempt)
+
+    return {"ok": False, "records": [], "sha": None, "error": last_error}
+
+
 def _compact_score_records_on_branch(
     group: str,
     branch: str,
@@ -748,7 +859,7 @@ def refresh_score_cache(group: str, require_remote: bool = False) -> list:
 
 
 def init_data_files():
-    """初始化数据文件，并在每个进程首次启动时合并远端历史记录。"""
+    """初始化本地缓存、独立裁判注册表和各组远端评分文件。"""
     global _INITIALIZED
     with _SCORE_DATA_LOCK:
         if _INITIALIZED:
@@ -762,7 +873,35 @@ def init_data_files():
             if group in SCORE_FILES and not SCORE_FILES[group].exists():
                 _write_json(SCORE_FILES[group], [])
 
-        _load_from_github(JUDGES_FILE, "data/judges.json")
+        token = _get_github_token()
+        judge_snapshot = _get_judge_registry_snapshot(
+            token,
+            seed_if_missing=bool(token),
+        )
+        if judge_snapshot["ok"]:
+            _write_json(JUDGES_FILE, judge_snapshot["records"])
+        else:
+            _load_from_github(JUDGES_FILE, LEGACY_JUDGES_REPO_PATH)
+
+        if token:
+            branch_ok, _ = _ensure_data_branch(token)
+            if branch_ok:
+                _ensure_remote_list_file(
+                    SCORE_DELETIONS_REPO_PATH,
+                    _read_json(SCORE_DELETIONS_FILE),
+                    token,
+                    "Data: initialize score deletion registry",
+                )
+                for group in get_groups():
+                    if group in SCORE_FILES:
+                        file_path = SCORE_FILES[group]
+                        _ensure_remote_list_file(
+                            f"data/{file_path.name}",
+                            _read_json(file_path),
+                            token,
+                            f"Data: initialize {group} score records",
+                        )
+
         for group in get_groups():
             if group in SCORE_FILES:
                 refresh_score_cache(group, require_remote=False)
@@ -805,10 +944,9 @@ def register_judge(name: str, judge_id: str, group: str) -> dict:
     if token:
         with _SCORE_DATA_LOCK:
             for attempt in range(GITHUB_SYNC_RETRIES):
-                snapshot = _fetch_github_records(
-                    "data/judges.json",
-                    GITHUB_BRANCH,
+                snapshot = _get_judge_registry_snapshot(
                     token,
+                    seed_if_missing=True,
                 )
                 if not snapshot["ok"]:
                     _sleep_for_retry(attempt)
@@ -818,12 +956,12 @@ def register_judge(name: str, judge_id: str, group: str) -> dict:
                     _write_json(JUDGES_FILE, judges)
                     return judge_info
                 result = _put_github_records(
-                    "data/judges.json",
+                    JUDGES_DATA_REPO_PATH,
                     judges,
                     snapshot["sha"],
                     token,
-                    f"Judge-sync: register or update {judge_id}",
-                    branch=GITHUB_BRANCH,
+                    f"Judge-data: register or update {judge_id}",
+                    branch=GITHUB_DATA_BRANCH,
                 )
                 if result["ok"]:
                     _write_json(JUDGES_FILE, judges)
@@ -858,12 +996,12 @@ def get_all_judges(
     refresh_remote: bool = False,
     require_remote: bool = False,
 ) -> list:
-    """获取已注册裁判；管理页可要求远端读取必须成功。"""
+    """获取已注册裁判；远端权威注册表位于 score-data 分支。"""
     if refresh_remote:
-        snapshot = _fetch_github_records(
-            "data/judges.json",
-            GITHUB_BRANCH,
-            _get_github_token(),
+        token = _get_github_token()
+        snapshot = _get_judge_registry_snapshot(
+            token,
+            seed_if_missing=bool(token),
         )
         if snapshot["ok"]:
             judges = [item for item in snapshot["records"] if isinstance(item, dict)]
@@ -890,10 +1028,9 @@ def delete_judges(judge_keys: list) -> int:
     with _SCORE_DATA_LOCK:
         last_error = "裁判信息删除未完成"
         for attempt in range(GITHUB_SYNC_RETRIES):
-            snapshot = _fetch_github_records(
-                "data/judges.json",
-                GITHUB_BRANCH,
+            snapshot = _get_judge_registry_snapshot(
                 token,
+                seed_if_missing=True,
             )
             if not snapshot["ok"]:
                 last_error = snapshot["error"]
@@ -913,24 +1050,15 @@ def delete_judges(judge_keys: list) -> int:
             ]
             removed_count = len(current_judges) - len(remaining)
             if removed_count == 0:
-                local_remaining = [
-                    judge
-                    for judge in _read_json(JUDGES_FILE)
-                    if (
-                        str(judge.get("name", "")).strip(),
-                        str(judge.get("judge_id", "")).strip(),
-                    )
-                    not in targets
-                ]
-                _write_json(JUDGES_FILE, local_remaining)
+                _write_json(JUDGES_FILE, current_judges)
                 return 0
             result = _put_github_records(
-                "data/judges.json",
+                JUDGES_DATA_REPO_PATH,
                 remaining,
                 snapshot["sha"],
                 token,
-                f"Admin: delete {removed_count} registered judges",
-                branch=GITHUB_BRANCH,
+                f"Judge-data: delete {removed_count} registered judges",
+                branch=GITHUB_DATA_BRANCH,
             )
             if result["ok"]:
                 _write_json(JUDGES_FILE, remaining)
@@ -981,7 +1109,13 @@ def save_score(
         if existing:
             record = existing
         else:
-            score_total = sum(scores.values())
+            normalized_scores = {
+                key: normalize_score_number(value) for key, value in scores.items()
+            }
+            score_total = normalize_score_number(sum(normalized_scores.values()))
+            normalized_final_score = normalize_score_number(
+                final_score if final_score is not None else score_total
+            )
             record = {
                 "record_id": record_id,
                 "judge_name": judge_info["name"],
@@ -989,13 +1123,8 @@ def save_score(
                 "judge_group": group,
                 "contestant_id": contestant_id,
                 "contestant_group": contestant_group or "",
-                "scores": {
-                    key: int(value)
-                    if isinstance(value, float) and value.is_integer()
-                    else value
-                    for key, value in scores.items()
-                },
-                "total_score": final_score if final_score is not None else score_total,
+                "scores": normalized_scores,
+                "total_score": normalized_final_score,
                 "raw_score": score_total,
                 "total_max": get_total_score(group),
                 "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -1004,14 +1133,21 @@ def save_score(
             if duration:
                 record["duration"] = duration
             if deductions:
-                record["deductions"] = deductions
+                normalized_deductions = {
+                    key: normalize_score_number(value)
+                    for key, value in deductions.items()
+                }
+                record["deductions"] = normalized_deductions
                 record["deduction_total"] = calculate_deduction_total(
                     group,
-                    scores,
-                    deductions,
+                    normalized_scores,
+                    normalized_deductions,
                 )
             if deduction_selections:
-                record["deduction_selections"] = deduction_selections
+                record["deduction_selections"] = {
+                    key: normalize_score_number(value)
+                    for key, value in deduction_selections.items()
+                }
             if veto_triggered:
                 record["veto_triggered"] = True
                 record["veto_items"] = veto_items or []
@@ -1090,7 +1226,9 @@ def _style_header(ws, headers: list, row: int = 1):
 def _format_mapping(mapping: Optional[dict]) -> str:
     if not mapping:
         return ""
-    return "；".join(f"{key}：{value}" for key, value in mapping.items())
+    return "；".join(
+        f"{key}：{normalize_score_number(value)}" for key, value in mapping.items()
+    )
 
 
 def _format_items(items: Optional[list]) -> str:
@@ -1166,15 +1304,21 @@ def export_records_to_excel(
     )
 
     for row_idx, record in enumerate(records, 2):
-        raw_score = record.get("raw_score", record.get("total_score", 0))
-        deduction_total = record.get("deduction_total", 0)
+        raw_score = normalize_score_number(
+            record.get("raw_score", record.get("total_score", 0))
+        )
+        deduction_total = normalize_score_number(record.get("deduction_total", 0))
+        total_score = normalize_score_number(record.get("total_score", 0))
+        total_maximum = normalize_score_number(
+            record.get("total_max", get_total_score(normalized_group))
+        )
         if is_practical:
             row_data = [
                 record.get("contestant_id", ""),
                 record.get("contestant_group", ""),
                 "",
                 "",
-                record.get("total_score", 0),
+                total_score,
                 record.get("duration", ""),
                 record.get("judge_name", ""),
                 record.get("judge_id", ""),
@@ -1183,10 +1327,12 @@ def export_records_to_excel(
                 record.get("record_id", ""),
                 raw_score,
                 deduction_total if deduction_total else "",
-                record.get("total_max", get_total_score(normalized_group)),
+                total_maximum,
             ]
             row_data += [
-                record.get("scores", {}).get(criterion_key, 0)
+                normalize_score_number(
+                    record.get("scores", {}).get(criterion_key, 0)
+                )
                 for criterion_key in criteria
             ]
         else:
@@ -1199,14 +1345,16 @@ def export_records_to_excel(
                 record.get("contestant_group", ""),
             ]
             row_data += [
-                record.get("scores", {}).get(criterion_key, 0)
+                normalize_score_number(
+                    record.get("scores", {}).get(criterion_key, 0)
+                )
                 for criterion_key in criteria
             ]
             row_data += [
                 raw_score,
                 deduction_total if deduction_total else "",
-                record.get("total_score", 0),
-                record.get("total_max", get_total_score(normalized_group)),
+                total_score,
+                total_maximum,
                 record.get("timestamp") or record.get("saved_at_utc", ""),
             ]
         for col_idx, value in enumerate(row_data, 1):

@@ -5,6 +5,24 @@
 已经保存的裁判信息和自动登录链接。
 """
 
+import math
+
+
+def normalize_score_number(value):
+    """将评分数值统一到一位小数，并把整数结果保存为 int。"""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return value
+    numeric_value = float(value)
+    if not math.isfinite(numeric_value):
+        raise ValueError("评分数值必须是有限数字")
+    rounded_value = round(numeric_value, 1)
+    if rounded_value == 0:
+        rounded_value = 0.0
+    if rounded_value.is_integer():
+        return int(rounded_value)
+    return rounded_value
+
+
 # 答辩组评分标准（总分100分）- 依据 01答辩打分表end.xlsx
 DEFENSE_CRITERIA = {
     "大模型思路讲解/语音交互方案": {
@@ -401,9 +419,7 @@ def calculate_deduction_total(group: str, scores: dict, deductions: dict):
 
         total += effective_amount
 
-    if isinstance(total, float) and total.is_integer():
-        return int(total)
-    return total
+    return normalize_score_number(total)
 
 
 def get_veto(group: str) -> dict:

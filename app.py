@@ -22,7 +22,7 @@ from utils import auth as _auth_module
 from utils import data_manager as _data_manager_module
 from utils import scoring as _scoring_module
 
-if getattr(_data_manager_module, "MODULE_VERSION", "") != "2026-08-15-beijing-deduction-caps-v3":
+if getattr(_data_manager_module, "MODULE_VERSION", "") != "2026-08-21-defense-submit-v4":
     _scoring_module = importlib.reload(_scoring_module)
     _data_manager_module = importlib.reload(_data_manager_module)
     _auth_module = importlib.reload(_auth_module)
@@ -44,6 +44,8 @@ from utils.scoring import (
     get_total_score,
     get_veto,
     is_practical_group,
+    normalize_group,
+    normalize_score_number,
 )
 from utils.data_manager import (
     ScorePersistenceError,
@@ -508,11 +510,11 @@ def _render_score_buttons(
             key=widget_key,
             label_visibility="collapsed",
         )
-        return label_to_value[selected_label]
+        return normalize_score_number(label_to_value[selected_label])
 
     option_values = list(options)
     zero_index = option_values.index(0) if 0 in option_values else 0
-    return st.radio(
+    selected_value = st.radio(
         label=criterion_name,
         options=option_values,
         index=zero_index,
@@ -521,6 +523,7 @@ def _render_score_buttons(
         key=widget_key,
         label_visibility="collapsed",
     )
+    return normalize_score_number(selected_value)
 
 
 def _render_inline_deduction_buttons(
@@ -544,7 +547,7 @@ def _render_inline_deduction_buttons(
 
 def render_scoring_page(judge: dict):
     """渲染评分表单"""
-    group = judge["group"]
+    group = normalize_group(judge["group"])
     criteria = get_criteria(group)
     total_max = get_total_score(group)
     deductions_def = get_deductions(group)
@@ -872,11 +875,13 @@ def render_scoring_page(judge: dict):
     score_zero_triggered = bool(score_zero_items)
 
     # 实时总分（已应用强制归零、扣分和总分归零规则）
-    raw_total = sum(scores.values())
+    raw_total = normalize_score_number(sum(scores.values()))
     if veto_triggered or score_zero_triggered:
         final_total = 0
     else:
-        final_total = max(0, raw_total - deduction_total)
+        final_total = normalize_score_number(
+            max(0, raw_total - deduction_total)
+        )
 
     if veto_triggered or score_zero_triggered:
         zero_reasons = veto_triggered_items + score_zero_items
@@ -921,7 +926,7 @@ def render_scoring_page(judge: dict):
             "✅ 提交评分",
             type="primary",
             use_container_width=True,
-            disabled=not contestant_id.strip() or not contestant_group,
+            disabled=not contestant_id.strip(),
         )
 
     if submitted:
@@ -986,6 +991,8 @@ def render_scoring_page(judge: dict):
                 )
             except ScorePersistenceError as exc:
                 st.error(f"❌ {exc}")
+            except (TypeError, ValueError) as exc:
+                st.error(f"❌ 提交数据格式错误：{exc}")
             else:
                 st.session_state.pop("pending_score_submission", None)
                 st.success(
@@ -1001,7 +1008,7 @@ def render_scoring_page(judge: dict):
 
 def render_history_page(judge: dict):
     """渲染历史评分记录"""
-    group = judge["group"]
+    group = normalize_group(judge["group"])
     records = get_all_scores(group, refresh_remote=True)
 
     st.markdown(f"### 📊 {group}评分记录")
@@ -1039,15 +1046,17 @@ def render_history_page(judge: dict):
         if has_duration:
             row.append(r.get("duration", ""))
         for c in score_headers:
-            row.append(str(r["scores"].get(c, 0)))
+            row.append(str(normalize_score_number(r["scores"].get(c, 0))))
+        total_score = normalize_score_number(r.get("total_score", 0))
+        total_maximum = normalize_score_number(r.get("total_max", 0))
         if has_deductions:
-            raw = r.get("raw_score", r["total_score"])
-            deduct = r.get("deduction_total", 0)
+            raw = normalize_score_number(r.get("raw_score", total_score))
+            deduct = normalize_score_number(r.get("deduction_total", 0))
             row.append(str(raw))
             row.append(str(deduct) if deduct else "0")
-            row.append(f"{r['total_score']}/{r['total_max']}")
+            row.append(f"{total_score}/{total_maximum}")
         else:
-            row.append(f"{r['total_score']}/{r['total_max']}")
+            row.append(f"{total_score}/{total_maximum}")
         row.append(r["timestamp"])
         table_data.append(row)
 
