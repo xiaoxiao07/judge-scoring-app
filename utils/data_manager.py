@@ -28,7 +28,7 @@ from .scoring import (
     normalize_score_number,
 )
 
-MODULE_VERSION = "2026-08-21-defense-submit-v4"
+MODULE_VERSION = "2026-08-21-github-auth-v5"
 
 # 数据目录
 DATA_DIR = Path(__file__).parent.parent / "data"
@@ -69,13 +69,13 @@ class ScorePersistenceError(RuntimeError):
 
 def _get_github_token() -> str:
     """从 Streamlit secrets 或环境变量获取 GitHub token。"""
-    env_token = os.environ.get("GITHUB_TOKEN", "")
+    env_token = os.environ.get("GITHUB_TOKEN", "").strip()
     if env_token:
         return env_token
     try:
         import streamlit as st
 
-        return str(st.secrets.get("GITHUB_TOKEN", ""))
+        return str(st.secrets.get("GITHUB_TOKEN", "")).strip()
     except Exception:
         return ""
 
@@ -89,6 +89,30 @@ def _github_headers(token: str = "") -> dict:
     if token:
         headers["Authorization"] = f"Bearer {token}"
     return headers
+
+
+def _github_http_error(action: str, status_code: int, message: str = "") -> str:
+    """将 GitHub 鉴权/权限错误转换成可直接处理的中文提示。"""
+    normalized_message = str(message or "").strip()
+    if status_code == 401:
+        return (
+            "GitHub 数据令牌已失效或被撤销（HTTP 401）。请在 Streamlit Cloud "
+            "应用设置的 Secrets 中更新 GITHUB_TOKEN"
+        )
+    if status_code == 403:
+        if "rate limit" in normalized_message.lower():
+            return "GitHub API 请求已被限流（HTTP 403），请稍后重试"
+        return (
+            "GitHub 数据令牌权限不足（HTTP 403）。GITHUB_TOKEN 必须对仓库 "
+            f"{GITHUB_REPO} 具有 Contents: Read and write 权限"
+        )
+    suffix = f"：{normalized_message}" if normalized_message else ""
+    return f"GitHub {action}失败（HTTP {status_code}）{suffix}"
+
+
+def _is_permanent_github_error(result: dict) -> bool:
+    """鉴权和权限错误无法通过短时间循环重试恢复。"""
+    return int(result.get("status") or 0) in (401, 403)
 
 
 def _load_from_github(file_path: Path, repo_path: str) -> bool:
@@ -294,7 +318,14 @@ def _fetch_github_records(repo_path: str, branch: str, token: str = "") -> dict:
             timeout=GITHUB_TIMEOUT,
         )
         if response.status_code == 404:
-            return {"ok": True, "exists": False, "records": [], "sha": None, "error": ""}
+            return {
+                "ok": True,
+                "exists": False,
+                "records": [],
+                "sha": None,
+                "status": 404,
+                "error": "",
+            }
         if response.status_code != 200:
             # 未配置令牌的只读场景可能触发 GitHub API 速率限制；
             # 后台读取可退回 raw 文件，但写入仍必须使用带 SHA 的认证 API。
@@ -315,6 +346,7 @@ def _fetch_github_records(repo_path: str, branch: str, token: str = "") -> dict:
                         "exists": False,
                         "records": [],
                         "sha": None,
+                        "status": 404,
                         "error": "",
                     }
                 if raw_response.status_code == 200:
@@ -325,14 +357,21 @@ def _fetch_github_records(repo_path: str, branch: str, token: str = "") -> dict:
                             "exists": True,
                             "records": records,
                             "sha": None,
+                            "status": 200,
                             "error": "",
                         }
+            message = ""
+            try:
+                message = str(response.json().get("message", ""))
+            except Exception:
+                message = response.text[:200]
             return {
                 "ok": False,
                 "exists": False,
                 "records": [],
                 "sha": None,
-                "error": f"GitHub 读取失败（HTTP {response.status_code}）",
+                "status": response.status_code,
+                "error": _github_http_error("读取", response.status_code, message),
             }
 
         payload = response.json()
@@ -351,6 +390,7 @@ def _fetch_github_records(repo_path: str, branch: str, token: str = "") -> dict:
                     "exists": True,
                     "records": [],
                     "sha": payload.get("sha"),
+                    "status": download.status_code,
                     "error": f"GitHub 文件下载失败（HTTP {download.status_code}）",
                 }
             raw = download.text
@@ -360,6 +400,7 @@ def _fetch_github_records(repo_path: str, branch: str, token: str = "") -> dict:
                 "exists": True,
                 "records": [],
                 "sha": payload.get("sha"),
+                "status": response.status_code,
                 "error": "GitHub 返回的评分文件内容不可读取",
             }
 
@@ -371,6 +412,7 @@ def _fetch_github_records(repo_path: str, branch: str, token: str = "") -> dict:
             "exists": True,
             "records": records,
             "sha": payload.get("sha"),
+            "status": response.status_code,
             "error": "",
         }
     except Exception as exc:
@@ -379,6 +421,7 @@ def _fetch_github_records(repo_path: str, branch: str, token: str = "") -> dict:
             "exists": False,
             "records": [],
             "sha": None,
+            "status": 0,
             "error": f"GitHub 读取异常：{exc}",
         }
 
@@ -419,7 +462,7 @@ def _put_github_records(
             "ok": False,
             "conflict": response.status_code in (409, 422),
             "status": response.status_code,
-            "error": f"GitHub 写入失败（HTTP {response.status_code}）：{message}",
+            "error": _github_http_error("写入", response.status_code, message),
         }
     except Exception as exc:
         return {
@@ -428,40 +471,6 @@ def _put_github_records(
             "status": 0,
             "error": f"GitHub 写入异常：{exc}",
         }
-
-
-def _ensure_data_branch(token: str) -> tuple[bool, str]:
-    """确保独立评分数据分支存在。"""
-    headers = _github_headers(token)
-    data_ref_url = f"{GITHUB_API_BASE}/git/ref/heads/{GITHUB_DATA_BRANCH}"
-    try:
-        response = requests.get(data_ref_url, headers=headers, timeout=GITHUB_TIMEOUT)
-        if response.status_code == 200:
-            return True, ""
-        if response.status_code != 404:
-            return False, f"无法检查数据分支（HTTP {response.status_code}）"
-
-        main_ref_url = f"{GITHUB_API_BASE}/git/ref/heads/{GITHUB_BRANCH}"
-        response = requests.get(main_ref_url, headers=headers, timeout=GITHUB_TIMEOUT)
-        if response.status_code != 200:
-            return False, f"无法读取主分支（HTTP {response.status_code}）"
-        main_sha = response.json()["object"]["sha"]
-
-        response = requests.post(
-            f"{GITHUB_API_BASE}/git/refs",
-            headers=headers,
-            json={"ref": f"refs/heads/{GITHUB_DATA_BRANCH}", "sha": main_sha},
-            timeout=GITHUB_TIMEOUT,
-        )
-        if response.status_code == 201:
-            return True, ""
-        if response.status_code == 422:
-            verify = requests.get(data_ref_url, headers=headers, timeout=GITHUB_TIMEOUT)
-            if verify.status_code == 200:
-                return True, ""
-        return False, f"无法创建数据分支（HTTP {response.status_code}）"
-    except Exception as exc:
-        return False, f"检查数据分支异常：{exc}"
 
 
 def _ensure_remote_list_file(
@@ -478,6 +487,8 @@ def _ensure_remote_list_file(
             return True, ""
         if not snapshot["ok"]:
             last_error = snapshot["error"]
+            if _is_permanent_github_error(snapshot):
+                break
             _sleep_for_retry(attempt)
             continue
         result = _put_github_records(
@@ -502,12 +513,8 @@ def _get_judge_registry_snapshot(
     seed_if_missing: bool = False,
 ) -> dict:
     """读取 score-data 裁判注册表；首次迁移时从 main 的旧文件安全播种。"""
-    if token:
-        branch_ok, branch_error = _ensure_data_branch(token)
-        if not branch_ok:
-            return {"ok": False, "records": [], "sha": None, "error": branch_error}
-
     last_error = "裁判注册表读取失败"
+    last_status = 0
     attempts = GITHUB_SYNC_RETRIES if token and seed_if_missing else 1
     for attempt in range(attempts):
         primary = _fetch_github_records(
@@ -524,6 +531,9 @@ def _get_judge_registry_snapshot(
             }
         if not primary["ok"]:
             last_error = primary["error"]
+            last_status = primary.get("status", 0)
+            if _is_permanent_github_error(primary):
+                break
             if attempt + 1 < attempts:
                 _sleep_for_retry(attempt)
                 continue
@@ -536,6 +546,9 @@ def _get_judge_registry_snapshot(
         )
         if not legacy["ok"]:
             last_error = legacy["error"]
+            last_status = legacy.get("status", 0)
+            if _is_permanent_github_error(legacy):
+                break
             if attempt + 1 < attempts:
                 _sleep_for_retry(attempt)
                 continue
@@ -555,11 +568,18 @@ def _get_judge_registry_snapshot(
         if result["ok"]:
             continue
         last_error = result["error"]
+        last_status = result.get("status", 0)
         if not result["conflict"]:
             break
         _sleep_for_retry(attempt)
 
-    return {"ok": False, "records": [], "sha": None, "error": last_error}
+    return {
+        "ok": False,
+        "records": [],
+        "sha": None,
+        "status": last_status,
+        "error": last_error,
+    }
 
 
 def _compact_score_records_on_branch(
@@ -576,6 +596,8 @@ def _compact_score_records_on_branch(
         snapshot = _fetch_github_records(repo_path, branch, token)
         if not snapshot["ok"]:
             last_error = snapshot["error"]
+            if _is_permanent_github_error(snapshot):
+                break
             _sleep_for_retry(attempt)
             continue
         current_records = _ensure_record_ids(snapshot["records"])
@@ -620,9 +642,6 @@ def delete_score_records(record_ids_by_group: dict) -> dict:
     token = _get_github_token()
     if not token:
         raise ScorePersistenceError("未配置 GITHUB_TOKEN，无法删除云端评分记录")
-    branch_ok, branch_error = _ensure_data_branch(token)
-    if not branch_ok:
-        raise ScorePersistenceError(branch_error)
 
     with _SCORE_DATA_LOCK:
         committed_deletions = None
@@ -635,6 +654,8 @@ def delete_score_records(record_ids_by_group: dict) -> dict:
             )
             if not snapshot["ok"]:
                 last_error = snapshot["error"]
+                if _is_permanent_github_error(snapshot):
+                    break
                 _sleep_for_retry(attempt)
                 continue
             current_deletions = _normalize_score_deletions(snapshot["records"])
@@ -718,10 +739,6 @@ def _persist_score_records_to_github(
     if not token:
         return False, local_records, "未配置 GITHUB_TOKEN，无法确认云端持久化"
 
-    branch_ok, branch_error = _ensure_data_branch(token)
-    if not branch_ok:
-        return False, local_records, branch_error
-
     file_path = SCORE_FILES[group]
     repo_path = f"data/{file_path.name}"
     last_error = "GitHub 同步未完成"
@@ -740,6 +757,11 @@ def _persist_score_records_to_github(
                 or legacy["error"]
                 or deletion_snapshot["error"]
             )
+            if any(
+                _is_permanent_github_error(result)
+                for result in (primary, legacy, deletion_snapshot)
+            ):
+                return False, local_records, last_error
             _sleep_for_retry(attempt)
             continue
 
@@ -778,7 +800,9 @@ def _persist_score_records_to_github(
             return True, candidate, ""
 
         last_error = result["error"]
-        if not result["conflict"] and result["status"] in (400, 401, 403, 404):
+        if _is_permanent_github_error(result):
+            return False, local_records, last_error
+        if not result["conflict"] and result["status"] in (400, 404):
             break
         _sleep_for_retry(attempt)
 
@@ -884,23 +908,21 @@ def init_data_files():
             _load_from_github(JUDGES_FILE, LEGACY_JUDGES_REPO_PATH)
 
         if token:
-            branch_ok, _ = _ensure_data_branch(token)
-            if branch_ok:
-                _ensure_remote_list_file(
-                    SCORE_DELETIONS_REPO_PATH,
-                    _read_json(SCORE_DELETIONS_FILE),
-                    token,
-                    "Data: initialize score deletion registry",
-                )
-                for group in get_groups():
-                    if group in SCORE_FILES:
-                        file_path = SCORE_FILES[group]
-                        _ensure_remote_list_file(
-                            f"data/{file_path.name}",
-                            _read_json(file_path),
-                            token,
-                            f"Data: initialize {group} score records",
-                        )
+            _ensure_remote_list_file(
+                SCORE_DELETIONS_REPO_PATH,
+                _read_json(SCORE_DELETIONS_FILE),
+                token,
+                "Data: initialize score deletion registry",
+            )
+            for group in get_groups():
+                if group in SCORE_FILES:
+                    file_path = SCORE_FILES[group]
+                    _ensure_remote_list_file(
+                        f"data/{file_path.name}",
+                        _read_json(file_path),
+                        token,
+                        f"Data: initialize {group} score records",
+                    )
 
         for group in get_groups():
             if group in SCORE_FILES:
@@ -949,6 +971,8 @@ def register_judge(name: str, judge_id: str, group: str) -> dict:
                     seed_if_missing=True,
                 )
                 if not snapshot["ok"]:
+                    if _is_permanent_github_error(snapshot):
+                        break
                     _sleep_for_retry(attempt)
                     continue
                 judges, judge_info, changed = upsert(snapshot["records"])
@@ -1034,6 +1058,8 @@ def delete_judges(judge_keys: list) -> int:
             )
             if not snapshot["ok"]:
                 last_error = snapshot["error"]
+                if _is_permanent_github_error(snapshot):
+                    break
                 _sleep_for_retry(attempt)
                 continue
             current_judges = [

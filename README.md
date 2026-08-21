@@ -42,6 +42,8 @@ streamlit run app.py
 - 评分记录写入独立的 `score-data` 分支，避免评分提交触发应用重新部署。
 - 多人同时提交时通过 GitHub 文件 SHA 进行乐观锁更新；发生冲突会重新读取、合并并重试，不会用旧整文件覆盖新记录。
 - `GITHUB_TOKEN` 必须具备仓库 `Contents: Read and write` 权限。未能确认远端持久化时，评分页会显示失败并保留同一提交 ID 供安全重试。
+- 日常提交直接读取并按文件 SHA 更新已存在的 `score-data`，不再额外调用 Git 引用接口检查分支。
+- 若页面提示 HTTP 401，说明令牌已过期或被撤销；应在 Streamlit Cloud 的应用设置 → Secrets 中更换 `GITHUB_TOKEN`，不要把令牌提交到仓库。
 - 后台 Excel 下载会强制刷新远端数据；远端不可用时拒绝生成可能不完整的历史文件。
 
 ## 管理后台
