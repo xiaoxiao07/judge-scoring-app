@@ -28,7 +28,7 @@ from .scoring import (
     normalize_score_number,
 )
 
-MODULE_VERSION = "2026-08-21-github-auth-v5"
+MODULE_VERSION = "2026-09-14-final-practical-v1"
 
 # 数据目录
 DATA_DIR = Path(__file__).parent.parent / "data"
@@ -43,6 +43,7 @@ SCORE_FILES = {
     "答辩组": DATA_DIR / "scores_线上答辩.json",
     "实操组": DATA_DIR / "scores_甘肃线下实操.json",
     "北京线上实操组": DATA_DIR / "scores_北京线上实操.json",
+    "总决赛实操组": DATA_DIR / "scores_总决赛实操.json",
 }
 
 # 删除标记保存在 score-data 分支；即使 main 或其他实例仍有旧缓存，

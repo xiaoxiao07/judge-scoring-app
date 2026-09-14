@@ -2,7 +2,7 @@
 裁判评分系统 — Streamlit 主程序
 
 裁判通过手机浏览器访问，进行评分操作。
-支持答辩组、实操组和北京线上实操组三类裁判，自动保存评分记录到 JSON，
+支持答辩组、实操组、北京线上实操组和总决赛实操组四类裁判，自动保存评分记录到 JSON，
 并支持导出为 Excel 格式。
 
 部署方式：Streamlit Community Cloud
@@ -22,7 +22,7 @@ from utils import auth as _auth_module
 from utils import data_manager as _data_manager_module
 from utils import scoring as _scoring_module
 
-if getattr(_data_manager_module, "MODULE_VERSION", "") != "2026-08-21-github-auth-v5":
+if getattr(_data_manager_module, "MODULE_VERSION", "") != "2026-09-14-final-practical-v1":
     _scoring_module = importlib.reload(_scoring_module)
     _data_manager_module = importlib.reload(_data_manager_module)
     _auth_module = importlib.reload(_auth_module)
@@ -711,7 +711,7 @@ def render_scoring_page(judge: dict):
                             count = st.number_input(
                                 label=f"{ded_name}次数",
                                 min_value=0,
-                                max_value=100,
+                                max_value=int(ded_info.get("max_count", 100)),
                                 value=0,
                                 step=1,
                                 key=f"ded_count_{ded_name}_{submit_round}",
@@ -812,11 +812,12 @@ def render_scoring_page(judge: dict):
                         deductions_applied[ded_name] = "总分记0分"
                         score_zero_items.append(ded_name)
 
-            if group == "实操组":
+            if group in ("实操组", "总决赛实操组"):
                 scores, score_override_notes = apply_practical_score_overrides(
                     scores,
                     auxiliary_task_card=auxiliary_task_card,
                     assembly_intervened=assembly_intervened,
+                    group=group,
                 )
             deduction_total = calculate_deduction_total(
                 group,

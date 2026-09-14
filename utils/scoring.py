@@ -1,7 +1,7 @@
 """
 评分标准定义模块。
 
-对外提供“答辩组”“实操组”和“北京线上实操组”；旧名称仅用于兼容
+对外提供“答辩组”“实操组”“北京线上实操组”和“总决赛实操组”；旧名称仅用于兼容
 已经保存的裁判信息和自动登录链接。
 """
 
@@ -139,6 +139,76 @@ PRACTICAL_CRITERIA = {
     },
 }
 
+# 总决赛实操组评分标准（总分100分）
+# 依据桌面最新版《具身智能精密装配赛题评分细则》：
+# 语音交互12分、大模型任务卡解析28分、装配流程28分、装配精度32分。
+FINAL_VOICE_MODULE = "一、语音交互功能实现（12分）"
+FINAL_TASK_CARD_MODULE = "二、大模型任务卡解析（28分）"
+FINAL_ASSEMBLY_MODULE = "三、装配流程（28分）"
+FINAL_PRECISION_MODULE = "四、装配精度（32分）"
+
+FINAL_SEVENTH_BLOCK_OPTIONS = [
+    {"label": "放置失败或掉落 → 0分", "value": 0},
+    {"label": "超出轮廓但未掉落 → 1分", "value": 1},
+    {"label": "轮廓完全位于指定方块内 → 2分", "value": 2},
+]
+
+FINAL_PRACTICAL_CRITERIA = {
+    # 一、语音交互功能实现（12分）
+    "唤醒与基础回应": _score_item(2, FINAL_VOICE_MODULE, [0, 2]),
+    "具备下达指令触发识别任务卡能力": _score_item(
+        2, FINAL_VOICE_MODULE, [0, 2]
+    ),
+    "语音提示任务已完成": _score_item(4, FINAL_VOICE_MODULE, [0, 4]),
+    "语音提示两个任务均已完成": _score_item(
+        4, FINAL_VOICE_MODULE, [0, 4]
+    ),
+
+    # 二、大模型任务卡解析（28分）
+    "任务卡视觉识别": _score_item(
+        4, FINAL_TASK_CARD_MODULE, [0, 2, 4]
+    ),
+    "大模型推理过程展示": _score_item(
+        5, FINAL_TASK_CARD_MODULE, [0, 5]
+    ),
+    "任务卡1内容播报": _score_item(
+        12, FINAL_TASK_CARD_MODULE, list(range(0, 13, 2))
+    ),
+    "任务卡2内容播报": _score_item(
+        7, FINAL_TASK_CARD_MODULE, list(range(8))
+    ),
+
+    # 三、装配流程（28分）
+    "视觉识别结果": _score_item(
+        14, FINAL_ASSEMBLY_MODULE, list(range(15))
+    ),
+    "抓取正确": _score_item(
+        7, FINAL_ASSEMBLY_MODULE, list(range(8))
+    ),
+    "放置正确": _score_item(
+        7, FINAL_ASSEMBLY_MODULE, list(range(8))
+    ),
+
+    # 四、装配精度（前6个方块各5分，第7个方块2分）
+    **{
+        f"方块{index}装配精度": _score_item(
+            5,
+            FINAL_PRECISION_MODULE,
+            PRECISION_OPTIONS,
+            submodule="前6个方块偏移精度（5分/个）",
+            display_name=f"方块{index}",
+        )
+        for index in range(1, 7)
+    },
+    "第7个方块放置精度": _score_item(
+        2,
+        FINAL_PRECISION_MODULE,
+        FINAL_SEVENTH_BLOCK_OPTIONS,
+        submodule="第7个方块指定叠放位置（2分）",
+        display_name="第7个方块",
+    ),
+}
+
 # 实操组扣分项（依据具身智能精密装配赛题打分表）
 # per_count：输入发生次数并按 deduct 自动计算；其余模式使用按钮选择。
 PRACTICAL_DEDUCTIONS = {
@@ -189,6 +259,58 @@ PRACTICAL_DEDUCTIONS = {
     },
 }
 
+# 总决赛实操组扣分项。次数类由裁判填写次数，规则类通过按钮选择。
+FINAL_PRACTICAL_DEDUCTIONS = {
+    "使用文本输入功能": {
+        "deduct": 3,
+        "mode": "per_count",
+        "description": "经裁判同意后，每条文本输入指令扣3分",
+    },
+    "碰撞": {
+        "deduct": 1,
+        "mode": "per_count",
+        "max_count": 7,
+        "description": "轻微碰撞或刮擦每个装配顺序最多扣1分",
+    },
+    "人为辅助机器人/智能体识别": {
+        "deduct": 0,
+        "mode": "task_card_override",
+        "description": "选择被人为辅助识别的任务卡，并自动清零对应任务得分",
+    },
+    "二次调整": {
+        "deduct": 5,
+        "mode": "per_count",
+        "description": "每次二次调整扣5分",
+    },
+    "人为介入装配环节": {
+        "deduct": 0,
+        "mode": "assembly_override",
+        "description": "介入后装配流程和装配精度均记0分",
+    },
+    "中断": {
+        "deduct": 5,
+        "mode": "per_count",
+        "description": "每次中断扣5分，扣完为止",
+    },
+    "示教": {
+        "deduct": 50,
+        "mode": "binary_deduct",
+        "inactive_label": "未使用",
+        "active_label": "使用（扣50分）",
+        "description": "未使用相机、仅采用示教方式安装零件，扣50分",
+    },
+    "使用按键、触摸屏、串口等非指定方式输入指令": {
+        "deduct": 0,
+        "mode": "score_zero",
+        "description": "选择后总分记0分",
+    },
+    "调试期间误删机器人系统文件导致系统崩溃": {
+        "deduct": 0,
+        "mode": "score_zero",
+        "description": "选择后总分记0分",
+    },
+}
+
 TASK_CARD_1_BROADCAST_CRITERIA = ("任务卡1内容播报",)
 TASK_CARD_2_BROADCAST_CRITERIA = ("任务卡2内容播报",)
 ASSEMBLY_AND_PRECISION_CRITERIA = tuple(
@@ -196,16 +318,27 @@ ASSEMBLY_AND_PRECISION_CRITERIA = tuple(
     for name, item in PRACTICAL_CRITERIA.items()
     if item["module"] in (ASSEMBLY_MODULE, PRECISION_MODULE)
 )
+FINAL_ASSEMBLY_AND_PRECISION_CRITERIA = tuple(
+    name
+    for name, item in FINAL_PRACTICAL_CRITERIA.items()
+    if item["module"] in (FINAL_ASSEMBLY_MODULE, FINAL_PRECISION_MODULE)
+)
 
 
 def apply_practical_score_overrides(
     scores: dict,
     auxiliary_task_card: str = "",
     assembly_intervened: bool = False,
+    group: str = "实操组",
 ) -> tuple[dict, list]:
     """应用任务卡辅助识别和人为介入装配对应的强制归零规则。"""
     adjusted_scores = dict(scores)
     override_notes = []
+    assembly_and_precision_criteria = (
+        FINAL_ASSEMBLY_AND_PRECISION_CRITERIA
+        if normalize_group(group) == "总决赛实操组"
+        else ASSEMBLY_AND_PRECISION_CRITERIA
+    )
 
     def zero_scores(criteria_names, note):
         for criterion_name in criteria_names:
@@ -219,13 +352,13 @@ def apply_practical_score_overrides(
     if auxiliary_task_card in ("任务卡2", "任务卡1及任务卡2"):
         zero_scores(TASK_CARD_2_BROADCAST_CRITERIA, "任务卡2内容播报")
         zero_scores(
-            ASSEMBLY_AND_PRECISION_CRITERIA,
+            assembly_and_precision_criteria,
             "第三部分装配流程与第四部分装配精度（任务卡2辅助识别）",
         )
 
     if assembly_intervened:
         zero_scores(
-            ASSEMBLY_AND_PRECISION_CRITERIA,
+            assembly_and_precision_criteria,
             "第三部分装配流程与第四部分装配精度（人为介入）",
         )
 
@@ -238,6 +371,18 @@ PRACTICAL_VETO = {
     },
     "伪装作弊": {
         "description": "通过伪装手段掩盖违规行为，全部分数扣除计0分",
+    },
+}
+
+FINAL_PRACTICAL_VETO = {
+    "作弊": {
+        "description": "求助场外人员、与场外人员讨论比赛工艺或其他违纪行为，取消比赛资格",
+    },
+    "大碰撞": {
+        "description": "机器人与零件或平台发生较大碰撞并导致自锁或急停，取消比赛资格",
+    },
+    "暴力使用或破坏物品": {
+        "description": "对参赛区域内物品暴力使用或破坏，取消比赛资格",
     },
 }
 
@@ -335,7 +480,7 @@ BEIJING_ONLINE_VETO = {
     },
 }
 
-PRACTICAL_GROUPS = ("实操组", "北京线上实操组")
+PRACTICAL_GROUPS = ("实操组", "北京线上实操组", "总决赛实操组")
 
 # 旧组名兼容映射。“线上实操”沿用相同的70分规则进入北京线上实操组。
 GROUP_ALIASES = {
@@ -360,6 +505,7 @@ GROUP_CRITERIA = {
     "答辩组": DEFENSE_CRITERIA,
     "实操组": PRACTICAL_CRITERIA,
     "北京线上实操组": BEIJING_ONLINE_CRITERIA,
+    "总决赛实操组": FINAL_PRACTICAL_CRITERIA,
 }
 
 # 各组总分
@@ -367,6 +513,9 @@ GROUP_TOTAL = {
     "答辩组": sum(c["max"] for c in DEFENSE_CRITERIA.values()),
     "实操组": sum(c["max"] for c in PRACTICAL_CRITERIA.values()),
     "北京线上实操组": sum(c["max"] for c in BEIJING_ONLINE_CRITERIA.values()),
+    "总决赛实操组": sum(
+        c["max"] for c in FINAL_PRACTICAL_CRITERIA.values()
+    ),
 }
 
 
@@ -392,6 +541,8 @@ def get_deductions(group: str) -> dict:
         return PRACTICAL_DEDUCTIONS
     if normalized_group == "北京线上实操组":
         return BEIJING_ONLINE_DEDUCTIONS
+    if normalized_group == "总决赛实操组":
+        return FINAL_PRACTICAL_DEDUCTIONS
     return {}
 
 
@@ -429,4 +580,6 @@ def get_veto(group: str) -> dict:
         return PRACTICAL_VETO
     if normalized_group == "北京线上实操组":
         return BEIJING_ONLINE_VETO
+    if normalized_group == "总决赛实操组":
+        return FINAL_PRACTICAL_VETO
     return {}
