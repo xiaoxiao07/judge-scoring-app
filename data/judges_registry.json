@@ -40,5 +40,11 @@
     "judge_id": "002",
     "group": "实操组",
     "token": "1b5125bf2f1f"
+  },
+  {
+    "name": "nana",
+    "judge_id": "0928",
+    "group": "总决赛实操组",
+    "token": "208575c3fb2a"
   }
 ]
